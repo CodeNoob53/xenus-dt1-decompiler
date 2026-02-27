@@ -51,6 +51,29 @@ dotnet publish .\src\XenusDt1Decompiler\XenusDt1Decompiler.csproj -c Release -r 
 
 ```
 
+## 🤖 Автоматичний реліз (GitHub Actions)
+
+У репозиторії налаштований workflow: `.github/workflows/release.yml`
+
+Що він робить:
+* збирає проєкт на `windows-latest`
+* публікує `win-x86` build
+* пакує його в `.zip`
+* створює GitHub Release і прикріпляє архів
+
+### Тригер релізу тегом
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Після пушу тега `v*` реліз створюється автоматично.
+
+### Ручний запуск
+
+Також доступний `workflow_dispatch` у вкладці **Actions** (вкажи `tag`, напр. `v0.1.1`).
+
 ## 🚀 Використання
 
 Програма підтримує як поштучну обробку, так і масове декодування цілих директорій.
@@ -58,7 +81,7 @@ dotnet publish .\src\XenusDt1Decompiler\XenusDt1Decompiler.csproj -c Release -r 
 ### Синтаксис:
 
 ```powershell
-.\XenusDt1Decompiler.exe <шлях_до_файлу_або_папки> [вихідна_папка] [шлях_до_veloader.dll]
+.\xenus-dt1-decompiler.exe <шлях_до_файлу_або_папки> [вихідна_папка] [шлях_до_veloader.dll]
 
 ```
 
@@ -67,14 +90,14 @@ dotnet publish .\src\XenusDt1Decompiler\XenusDt1Decompiler.csproj -c Release -r 
 **1. Декодування одного тайлу карти:**
 
 ```powershell
-.\XenusDt1Decompiler.exe "C:\Games\Xenus 2\CACHE\TEXTURES\MAP\GROUP_0_0_BMP.DT1" ".\out_map"
+.\xenus-dt1-decompiler.exe "C:\Games\Xenus 2\CACHE\TEXTURES\MAP\GROUP_0_0_BMP.DT1" ".\out_map"
 
 ```
 
 **2. Пакетна обробка всіх текстур карти:**
 
 ```powershell
-.\XenusDt1Decompiler.exe "C:\Games\Xenus 2\CACHE\TEXTURES\MAP" ".\out_map" "C:\Games\Xenus 2\VELoader.dll"
+.\xenus-dt1-decompiler.exe "C:\Games\Xenus 2\CACHE\TEXTURES\MAP" ".\out_map" "C:\Games\Xenus 2\VELoader.dll"
 
 ```
 
