@@ -1,0 +1,20 @@
+# Build artifacts
+bin/
+obj/
+
+# Local decode outputs
+out/
+out_map/
+out_map_png/
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# OS
+Thumbs.db
+Desktop.ini
