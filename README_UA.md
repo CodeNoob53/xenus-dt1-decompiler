@@ -3,10 +3,11 @@
 [![Platform](https://img.shields.io/badge/platform-Windows-blue.svg)](https://www.microsoft.com/windows)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Build](https://img.shields.io/badge/.NET-8.0-blueviolet.svg)](https://dotnet.microsoft.com/download)
+[![Version](https://img.shields.io/badge/version-2.0.0-orange.svg)](CHANGELOG.md)
 
 **[English version (README.md)](README.md)**
 
-Інструмент для масового декодування стиснутого кешу текстур гри **Xenus 2: White Gold** (файли `*.DT1` / `*.DT2`) у стандартні формати зображень (`.dds`, `.bmp`, `.tga` тощо) зі збереженням оригінальної ієрархії папок.
+Інструмент для масового декодування стиснутого кешу текстур гри **Xenus 2: White Gold** (файли `*.DT1` / `*.DT2`) у стандартні формати зображень (`.dds`, `.tga`, `.png` тощо) зі збереженням оригінальної ієрархії папок.
 
 ---
 
@@ -24,11 +25,21 @@
 
 ---
 
+## Важливо: реальні формати файлів
+
+Рушій гри кешує текстури внутрішньо як **DDS** (DirectDraw Surface), незалежно від суфіксу в назві файлу. Наприклад, `GRASS_TGA.DT1` після розпакування є DDS-файлом — суфікс `_TGA` це лише внутрішній тег рушія, а не реальний формат.
+
+Починаючи з версії v2.0.0, утиліта визначає справжній формат за magic bytes файлу і:
+- **Без аргументу формату / режим Auto** — зберігає з правильним розширенням (`.dds`, `.png` тощо), ігноруючи суфікс у назві.
+- **З аргументом формату** (наприклад `tga`) — конвертує DDS у потрібний формат через [texconv](https://github.com/microsoft/DirectXTex/wiki/Texconv) (частина [DirectXTex](https://github.com/microsoft/DirectXTex) від Microsoft, ліцензія MIT), правильно декодуючи DXT1/DXT5 разом з alpha-каналом. `texconv.exe` автоматично включається до архіву релізу.
+
+---
+
 ## Формат файлів DT1 / DT2
 
 Кожен файл `.DT1` або `.DT2` — це один стиснутий ресурс. 8-байтний заголовок, за яким одразу йде стиснутий payload:
 
-```
+```text
 Зміщення  Розмір  Опис
 0          3       Розмір розпакованих даних, little-endian 24-bit
 3          1       Прапорці (0x50 у всіх спостережуваних файлах)
@@ -36,8 +47,6 @@
 7          1       Прапорці (0x08 у всіх спостережуваних файлах)
 8          N       Стиснутий payload (VE3 zlib, починається з 0x16 0x30)
 ```
-
-Формат виводу визначається з оригінальної назви файлу. Файли слідують конвенції `<base>_<EXT>.DT1`, де `EXT` — реальний формат (наприклад, `GRASS_TGA.DT1` → `GRASS.tga`, `GROUP_4_0_BMP.DT1` → `GROUP_4_0.bmp`). Формат можна перевизначити 4-м аргументом командного рядка.
 
 > **Важливо:** Цей інструмент обробляє лише файли `.DT1` / `.DT2`. Архіви у форматі `CE#$` (наприклад, `CACHE/*.DAT`) мають іншу структуру — формат повністю задокументований і підтримка `CE#$` може бути інтегрована у майбутніх версіях утиліти після фінального доопрацювання.
 
@@ -48,18 +57,20 @@
 - **ОС:** Windows (хост x86 або x64)
 - **Runtime:** [.NET SDK 8.0+](https://dotnet.microsoft.com/download/dotnet/8.0)
 - **Архітектура:** публікація обов'язково як **win-x86** — `VELoader.dll` є 32-бітною DLL
-- **VELoader.dll:** з кореневої папки гри або з розпакованого `.grp`-архіву
+- **VELoader.dll:** `VELoader.dll` часто не ініціалізується з піратськими копіями гри (помилка `LoadLibraryEx 1114`). Використовуйте `VELoader.dll` зі **Steam-версії гри**, **Vital Engine SDK** або з утиліти **GrpUnpacker**.
 
 ---
 
 ## Структура проєкту
 
-```
+```text
 xenus-dt1-decompiler/
 ├── src/
 │   └── XenusDt1Decompiler/
 │       ├── XenusDt1Decompiler.csproj
-│       └── Program.cs
+│       ├── Program.cs
+│       ├── DecompilerCore.cs
+│       └── MainForm.cs
 ├── .github/
 │   └── workflows/
 │       └── release.yml
@@ -85,24 +96,43 @@ Self-contained публікація в один exe (рекомендовано 
 dotnet publish .\src\XenusDt1Decompiler\XenusDt1Decompiler.csproj -c Release -r win-x86 --self-contained true
 ```
 
-Виконуваний файл буде в `bin\Release\net8.0\win-x86\publish\`.
+Виконуваний файл буде в `bin\Release\net8.0-windows\win-x86\publish\`.
 
 ---
 
 ## Автоматичний реліз (GitHub Actions)
 
-Workflow за адресою `.github/workflows/release.yml` запускається при пуші тегу версії. Він збирає проєкт і створює GitHub Release з архівом `win-x86.zip` (exe + `run_decompiler.bat`):
+Workflow за адресою `.github/workflows/release.yml` запускається при пуші тегу версії. Він збирає проєкт, завантажує останній `texconv.exe` з [релізів DirectXTex](https://github.com/microsoft/DirectXTex/releases) і створює GitHub Release з архівом `win-x86.zip` (exe + `texconv.exe` + `run_decompiler.bat`):
 
 ```powershell
-git tag v1.0.0
-git push origin v1.0.0
+git tag v2.0.0
+git push origin v2.0.0
 ```
 
 ---
 
 ## Використання
 
-```
+Утиліта підтримує два режими роботи: **Графічний інтерфейс (GUI)** та **Командний рядок (CLI)**.
+
+### Режим GUI (Графічний інтерфейс)
+
+Запустіть `xenus-dt1-decompiler.exe` подвійним кліком (без аргументів). З'явиться вікно, за допомогою якого можна:
+
+1. Обрати вхідний каталог з файлами `.DT1` / `.DT2`.
+2. Обрати вихідний каталог.
+3. За потреби вказати шлях до `VELoader.dll` (визначається автоматично).
+4. Обрати формат виводу (`Auto`, `dds`, `tga`, `bmp`, `png`, `jpg`).
+5. Натиснути **START DECOMPILE** і спостерігати за прогресом у вікні логів.
+
+**Формат Auto** — визначає реальний формат за magic bytes і зберігає з правильним розширенням.
+**Явний формат** — конвертує розпакований DDS у вибраний формат через [texconv](https://github.com/microsoft/DirectXTex/wiki/Texconv) (включено до архіву релізу).
+
+### Режим командного рядка (CLI)
+
+Для автоматизації або використання з `.bat`-скриптів:
+
+```text
 xenus-dt1-decompiler.exe <вхід> [вихідна_папка] [шлях_до_veloader] [формат]
 ```
 
@@ -111,39 +141,28 @@ xenus-dt1-decompiler.exe <вхід> [вихідна_папка] [шлях_до_v
 | `вхід` | — | Шлях до файлу `.DT1`/`.DT2` **або** до папки для рекурсивного сканування |
 | `вихідна_папка` | поряд із входом | Папка для збереження декодованих файлів |
 | `шлях_до_veloader` | автопошук | Явний шлях до `VELoader.dll` |
-| `формат` | із назви файлу | Примусове розширення виводу: `dds`, `bmp`, `tga` тощо |
+| `формат` | auto (за magic bytes) | Примусовий формат виводу: `dds`, `tga`, `bmp`, `png`, `jpg` |
 
-Якщо `шлях_до_veloader` не вказано, утиліта шукає `VELoader.dll` у поточному каталозі, `.\GrpUnpacker\` та `..\`.
+Якщо `шлях_до_veloader` не вказано, утиліта шукає `VELoader.dll` у поточному каталозі → `.\GrpUnpacker\` → `..\GrpUnpacker\` → `..\`.
 
-### Приклади
+#### Приклади (CLI)
 
-**Декодувати один файл текстури:**
-
+**Декодувати один файл (автоформат):**
 ```powershell
 .\xenus-dt1-decompiler.exe "C:\Games\Xenus 2\CACHE\TEXTURES\GRASS_TGA.DT1" ".\out_tex"
 ```
 
-**Масове декодування всіх текстур з автопошуком VELoader:**
-
+**Масове декодування з автовизначенням VELoader:**
 ```powershell
 .\xenus-dt1-decompiler.exe "C:\Games\Xenus 2\CACHE\TEXTURES" ".\out_tex"
 ```
 
-**Масове декодування з примусовим форматом DDS:**
-
+**Масове декодування з конвертацією у TGA:**
 ```powershell
-.\xenus-dt1-decompiler.exe "C:\Games\Xenus 2\CACHE\TEXTURES" ".\out_tex" "C:\Games\Xenus 2\VELoader.dll" dds
+.\xenus-dt1-decompiler.exe "C:\Games\Xenus 2\CACHE\TEXTURES" ".\out_tex" "C:\Games\Xenus 2\VELoader.dll" tga
 ```
 
 Ієрархія підпапок відносно `вхід` відтворюється у `вихідна_папка`.
-
-### Виведення в консолі
-
-```
-[OK]   path\to\file.DT1 -> out\file.bmp  (49208 bytes, sig='BM..', ver=0x200, hdrUnc=49200, apiUnc=49200)
-[FAIL] path\to\broken.DT1 : Unload returned 0 (...)
-Done. OK=308, FAIL=2
-```
 
 ---
 
@@ -153,10 +172,24 @@ Done. OK=308, FAIL=2
 |---|---|
 | 0 | Всі файли успішно декодовано |
 | 1 | Один або більше файлів завершились помилкою |
-| 2 | Не вказано аргументів |
+| 2 | Неправильні аргументи (або показ довідки) |
 | 3 | `VELoader.dll` не знайдено |
 | 4 | У вхідній папці не знайдено DT1/DT2 файлів |
 | 5 | Вхідний шлях не існує |
+
+---
+
+## Changelog
+
+### v2.0.0
+- **GUI:** Додано графічний інтерфейс — запуск без аргументів відкриває вікно застосунку.
+- **Визначення формату:** Утиліта тепер читає magic bytes з розпакованих даних і зберігає файли з правильним розширенням, ігноруючи оманливі суфікси `_TGA` / `_BMP` у назвах файлів рушія.
+- **Конвертація формату:** При вказаному явному форматі розпакований DDS конвертується через **[texconv](https://github.com/microsoft/DirectXTex/wiki/Texconv)** (Microsoft DirectXTex, MIT) із правильним декодуванням DXT1/DXT5 та alpha-каналу. `texconv.exe` включено до архіву релізу.
+- **Виведення помилок:** Повідомлення про помилку `LoadLibraryEx 1114` розбито на окремі рядки для кращої читабельності.
+- **Архітектура:** Рефакторинг на `DecompilerCore` (спільна логіка), `Program` (CLI) та `MainForm` (GUI).
+
+### v1.0.0
+- Початковий реліз: CLI-інструмент для пакетного декодування DT1/DT2 через VELoader.dll з Windows Native Interop.
 
 ---
 

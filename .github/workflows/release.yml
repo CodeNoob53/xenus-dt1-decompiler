@@ -47,6 +47,13 @@ jobs:
       - name: Publish win-x86
         run: dotnet publish .\src\XenusDt1Decompiler\XenusDt1Decompiler.csproj -c Release -r win-x86 --self-contained false -o .\publish
 
+      - name: Download texconv
+        shell: pwsh
+        run: |
+          $rel = Invoke-RestMethod "https://api.github.com/repos/microsoft/DirectXTex/releases/latest"
+          $asset = $rel.assets | Where-Object { $_.name -eq "texconv.exe" } | Select-Object -First 1
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile ".\publish\texconv.exe"
+
       - name: Create package
         id: package
         shell: pwsh
