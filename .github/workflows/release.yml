@@ -58,9 +58,19 @@ jobs:
         id: package
         shell: pwsh
         run: |
+          $tag = "${{ steps.vars.outputs.tag }}"
+          $dirName = "xenus-dt1-decompiler-$tag"
+          $artifact = "$dirName-win-x86.zip"
+
+          # Copy extra files into publish folder
           Copy-Item ".\run_decompiler.bat" -Destination ".\publish\"
-          $artifact = "xenus-dt1-decompiler-${{ steps.vars.outputs.tag }}-win-x86.zip"
-          Compress-Archive -Path ".\publish\*" -DestinationPath $artifact -Force
+          Copy-Item ".\README.md" -Destination ".\publish\"
+
+          # Move publish contents into a named subfolder so the zip extracts cleanly
+          New-Item -ItemType Directory -Path ".\dist\$dirName" | Out-Null
+          Copy-Item ".\publish\*" -Destination ".\dist\$dirName\" -Recurse
+
+          Compress-Archive -Path ".\dist\$dirName" -DestinationPath $artifact -Force
           "artifact=$artifact" >> $env:GITHUB_OUTPUT
 
       - name: Create GitHub release
