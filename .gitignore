@@ -1,12 +1,11 @@
 # Build artifacts
 bin/
 obj/
+publish/
 
 # Local decode outputs
 out/
 out_tex/
-out_map/
-out_map_png/
 
 # IDE
 .vs/

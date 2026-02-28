@@ -64,13 +64,13 @@ jobs:
 
           # Copy extra files into publish folder
           Copy-Item ".\run_decompiler.bat" -Destination ".\publish\"
-          Copy-Item ".\README.md" -Destination ".\publish\"
+          Copy-Item ".\dist\README.txt" -Destination ".\publish\"
 
           # Move publish contents into a named subfolder so the zip extracts cleanly
-          New-Item -ItemType Directory -Path ".\dist\$dirName" | Out-Null
-          Copy-Item ".\publish\*" -Destination ".\dist\$dirName\" -Recurse
+          New-Item -ItemType Directory -Path ".\pkg\$dirName" | Out-Null
+          Copy-Item ".\publish\*" -Destination ".\pkg\$dirName\" -Recurse
 
-          Compress-Archive -Path ".\dist\$dirName" -DestinationPath $artifact -Force
+          Compress-Archive -Path ".\pkg\$dirName" -DestinationPath $artifact -Force
           "artifact=$artifact" >> $env:GITHUB_OUTPUT
 
       - name: Create GitHub release

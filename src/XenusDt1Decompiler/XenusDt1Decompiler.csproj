@@ -7,11 +7,11 @@
     <Nullable>enable</Nullable>
     <PlatformTarget>x86</PlatformTarget>
     <AssemblyName>xenus-dt1-decompiler</AssemblyName>
-    <ApplicationIcon>app.ico</ApplicationIcon>
+    <ApplicationIcon>..\..\dist\app.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="app.ico">
+    <Content Include="..\..\dist\app.ico" Link="app.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
