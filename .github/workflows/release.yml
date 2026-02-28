@@ -51,6 +51,7 @@ jobs:
         id: package
         shell: pwsh
         run: |
+          Copy-Item ".\run_decompiler.bat" -Destination ".\publish\"
           $artifact = "xenus-dt1-decompiler-${{ steps.vars.outputs.tag }}-win-x86.zip"
           Compress-Archive -Path ".\publish\*" -DestinationPath $artifact -Force
           "artifact=$artifact" >> $env:GITHUB_OUTPUT

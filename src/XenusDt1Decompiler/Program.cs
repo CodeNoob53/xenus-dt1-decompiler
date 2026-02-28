@@ -37,6 +37,7 @@ internal static class Program
         var veloaderPath = args.Length >= 3
             ? Path.GetFullPath(args[2])
             : ResolveDefaultVELoader();
+        var userExt = args.Length >= 4 ? args[3] : null;
 
         if (!File.Exists(veloaderPath))
         {
@@ -47,7 +48,7 @@ internal static class Program
         if (File.Exists(inputPath))
         {
             Directory.CreateDirectory(outputRoot);
-            return DecodeOneFile(inputPath, outputRoot, veloaderPath) ? 0 : 1;
+            return DecodeOneFile(inputPath, outputRoot, veloaderPath, null, userExt) ? 0 : 1;
         }
 
         if (Directory.Exists(inputPath))
@@ -67,7 +68,7 @@ internal static class Program
             int fail = 0;
             foreach (var file in files)
             {
-                if (DecodeOneFile(file, outputRoot, veloaderPath, inputPath))
+                if (DecodeOneFile(file, outputRoot, veloaderPath, inputPath, userExt))
                 {
                     ok++;
                 }
@@ -91,7 +92,7 @@ internal static class Program
             || path.EndsWith(".DT2", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool DecodeOneFile(string filePath, string outputRoot, string veloaderPath, string? inputRoot = null)
+    private static bool DecodeOneFile(string filePath, string outputRoot, string veloaderPath, string? inputRoot = null, string? userExt = null)
     {
         byte[] packed;
         try
@@ -184,17 +185,20 @@ internal static class Program
                 }
 
                 int writeLen = apiUnc > 0 && apiUnc <= unpacked.Length ? apiUnc : unpacked.Length;
-                var outRel = inputRoot is null
-                    ? Path.GetFileName(filePath)
-                    : Path.GetRelativePath(inputRoot, filePath);
+                var outRelDir = inputRoot is null
+                    ? ""
+                    : Path.GetDirectoryName(Path.GetRelativePath(inputRoot, filePath)) ?? "";
 
-                var outPath = Path.Combine(outputRoot, outRel + ".dds");
+                var nameInfo = ParseFileNameAndExtension(filePath, userExt);
+                var newFileName = nameInfo.basePath + nameInfo.ext;
+                
+                var outPath = Path.Combine(outputRoot, outRelDir, newFileName);
                 var outDir = Path.GetDirectoryName(outPath)!;
                 Directory.CreateDirectory(outDir);
                 File.WriteAllBytes(outPath, unpacked.AsSpan(0, writeLen).ToArray());
 
                 var sig = GetSig(unpacked);
-                Console.WriteLine($"[OK] {filePath} -> {outPath} ({writeLen} bytes, sig='{sig}', ver=0x{ver:x}, hdrUnc={headerUnc}, apiUnc={apiUnc}, hdrComp24={headerComp}, flags=0x{flags:x2})");
+                Console.WriteLine($"[OK] {filePath} -> {outPath} ({writeLen} bytes, sig='{sig}', ver=0x{ver:x}, hdrUnc={headerUnc}, apiUnc={apiUnc})");
                 return true;
             }
         }
@@ -262,8 +266,33 @@ internal static class Program
     private static void PrintUsage()
     {
         Console.WriteLine("Usage:");
-        Console.WriteLine($"  {AppName} <input_file.dt1|dt2> [output_dir] [path_to_veloader.dll]");
-        Console.WriteLine($"  {AppName} <input_dir> [output_dir] [path_to_veloader.dll]");
+        Console.WriteLine($"  {AppName} <input_file.dt1|dt2> [output_dir] [path_to_veloader.dll] [format]");
+        Console.WriteLine($"  {AppName} <input_dir> [output_dir] [path_to_veloader.dll] [format]");
+    }
+
+    private static (string basePath, string ext) ParseFileNameAndExtension(string filePath, string? userExt)
+    {
+        var nameWithoutDt = Path.GetFileNameWithoutExtension(filePath);
+        int lastUnder = nameWithoutDt.LastIndexOf('_');
+        string ext = "dds";
+        string baseName = nameWithoutDt;
+
+        if (lastUnder > 0 && lastUnder < nameWithoutDt.Length - 1)
+        {
+            var potentialExt = nameWithoutDt.Substring(lastUnder + 1);
+            if (potentialExt.Length >= 2 && potentialExt.Length <= 4 && potentialExt.All(char.IsLetterOrDigit))
+            {
+                ext = potentialExt.ToLowerInvariant();
+                baseName = nameWithoutDt.Substring(0, lastUnder);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(userExt))
+        {
+            ext = userExt.TrimStart('.').ToLowerInvariant();
+        }
+
+        return (baseName, "." + ext);
     }
 
     private sealed class Pinned : IDisposable

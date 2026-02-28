@@ -4,25 +4,27 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Build](https://img.shields.io/badge/.NET-8.0-blueviolet.svg)](https://dotnet.microsoft.com/download)
 
-Спеціалізована утиліта для реверс-інжинірингу та декодування текстур кешу (`*.DT1` / `*.DT2`) гри **Xenus 2: White Gold** (Біле золото).
+🇺🇦 **[Українська версія документації (README_UA.md)](README_UA.md)**
 
-## 💡 Чому цей підхід унікальний?
+A specialized utility for reverse engineering and mass decoding cache textures (`*.DT1` and `*.DT2` formats) of the game **Xenus 2: White Gold**.
 
-Дані в форматах `DT1/DT2` використовують специфічне для рушія **Vital Engine 3** пакування (модифікований `zlib` з пресет-словниками). Замість того, щоб намагатися відтворити складний алгоритм з нуля, цей інструмент використовує **Native Interop** для виклику оригінального компонента гри — `VELoader.dll`.
+## 💡 Why is this approach unique?
 
-Утиліта звертається до експортованих функцій:
-* `GetCLVersion` — для перевірки сумісності.
-* `GetUnloadSize` — для точного виділення пам'яті.
-* `Unload` — для безпосередньої декомпресії.
+Data in `DT1/DT2` formats uses engine-specific **Vital Engine 3** packaging (modified `zlib` with preset dictionaries). Instead of trying to recreate a complex algorithm from scratch, this tool uses **Native Interop** to call the original game component — `VELoader.dll`.
 
-## 🛠 Вимоги
+The utility accesses exported functions:
+* `GetCLVersion` — to check compatibility.
+* `GetUnloadSize` — for precise memory allocation.
+* `Unload` — for direct decompression.
 
-* **ОС:** Windows (x86/x64)
+## 🛠 Build Requirements
+
+* **OS:** Windows (x86/x64)
 * **Runtime:** [.NET SDK 8.0+](https://dotnet.microsoft.com/download/dotnet/8.0)
-* **Архітектура:** Проєкт обов'язково має бути зібраний під **x86**, оскільки оригінальна DLL є 32-бітною.
-* **Залежності:** Файл `VELoader.dll` (можна знайти в кореневій папці гри або в архівах `GrpUnpacker`).
+* **Architecture:** The project must be built for **x86**, as the original DLL is 32-bit.
+* **Dependencies:** The `VELoader.dll` file (can be found in the game's root folder or in `GrpUnpacker` archives).
 
-## 📁 Структура проєкту
+## 📁 Project Structure
 
 ```text
 xenus-dt1-decompiler/
@@ -30,89 +32,69 @@ xenus-dt1-decompiler/
  │    └── XenusDt1Decompiler/
  │         ├── XenusDt1Decompiler.csproj
  │         └── Program.cs
+ ├── .github/
+ │    └── workflows/
+ │         └── release.yml
+ ├── run_decompiler.bat
  ├── .gitignore
  └── README.md
-
 ```
 
-## 🏗 Збірка
+## 🏗 Building
 
-Для створення виконуваного файлу виконайте команду в терміналі:
+To create the executable, run the following command in the terminal:
 
 ```powershell
 dotnet build .\src\XenusDt1Decompiler\XenusDt1Decompiler.csproj -c Release
-
 ```
 
-Для публікації готового бінарного файлу без зайвих залежностей:
+To publish the ready binary without extra dependencies:
 
 ```powershell
 dotnet publish .\src\XenusDt1Decompiler\XenusDt1Decompiler.csproj -c Release -r win-x86 --self-contained false
-
 ```
 
-## 🤖 Автоматичний реліз (GitHub Actions)
+## 🤖 Automatic Release (GitHub Actions)
 
-У репозиторії налаштований workflow: `.github/workflows/release.yml`
+A pipeline is set up in the repository: `.github/workflows/release.yml`
 
-Що він робить:
-* збирає проєкт на `windows-latest`
-* публікує `win-x86` build
-* пакує його в `.zip`
-* створює GitHub Release і прикріпляє архів
+After creating and pushing a version tag (`git tag v0.1.0`), GitHub Actions will automatically build the project and create a GitHub Release, attaching the `win-x86.zip` archive containing the ready utility and the `run_decompiler.bat` quick start file.
 
-### Тригер релізу тегом
+## 🚀 Usage
+
+The program supports both item-by-item processing and mass decoding of entire directories from the command line (including recursive traversal of all subfolders).
+
+### Syntax:
 
 ```powershell
-git tag v0.1.0
-git push origin v0.1.0
+.\xenus-dt1-decompiler.exe <path_to_file_or_folder> [output_folder] [path_to_veloader.dll] [format]
 ```
 
-Після пушу тега `v*` реліз створюється автоматично.
+### Examples:
 
-### Ручний запуск
-
-Також доступний `workflow_dispatch` у вкладці **Actions** (вкажи `tag`, напр. `v0.1.1`).
-
-## 🚀 Використання
-
-Програма підтримує як поштучну обробку, так і масове декодування цілих директорій.
-
-### Синтаксис:
+**1. Decoding a single map tile:**
 
 ```powershell
-.\xenus-dt1-decompiler.exe <шлях_до_файлу_або_папки> [вихідна_папка] [шлях_до_veloader.dll]
-
+.\xenus-dt1-decompiler.exe "C:\Games\Xenus 2\CACHE\TEXTURES\MAP\GROUP_0_0_BMP.DT1" ".\out_tex"
 ```
 
-### Приклади:
-
-**1. Декодування одного тайлу карти:**
+**2. Batch processing of all textures (with recursive traversal of subfolders):**
 
 ```powershell
-.\xenus-dt1-decompiler.exe "C:\Games\Xenus 2\CACHE\TEXTURES\MAP\GROUP_0_0_BMP.DT1" ".\out_map"
-
+.\xenus-dt1-decompiler.exe "C:\Games\Xenus 2\CACHE\TEXTURES" ".\out_tex" "C:\Games\Xenus 2\VELoader.dll"
 ```
 
-**2. Пакетна обробка всіх текстур карти:**
+The result will be standard texture files (the format is automatically determined from the original filename, e.g., `.bmp`, `.tga` or `.dds`), which can be opened in image editors. You can force a format as the 4th parameter.
 
-```powershell
-.\xenus-dt1-decompiler.exe "C:\Games\Xenus 2\CACHE\TEXTURES\MAP" ".\out_map" "C:\Games\Xenus 2\VELoader.dll"
+## 📦 For Contributors
 
-```
-
-Результатом будуть стандартні файли `.dds`, які можна відкрити за допомогою Paint.NET, Photoshop або GIMP.
-
-## 📦 Нотатки для контриб'юторів
-
-* **Game Assets:** Категорично заборонено додавати оригінальні ігрові ресурси (`.DT1`, `.DT2`, `.dds`, `.png`) у репозиторій.
-* **Коміти:** Додавайте лише вихідний код, документацію та скрипти збірки.
-* **Ігнорування:** Тимчасові папки `bin/`, `obj/` та локальні результати декодування вже додані в `.gitignore`.
-* **Contributing Guide:** Див. файл `CONTRIBUTING.md`.
-* **Ліцензія:** `MIT` (див. `LICENSE`).
+* **Game Assets:** It is strictly prohibited to add original game resources (`.DT1`, `.DT2`, `.dds`, `.png`) to the repository.
+* **Commits:** Only add source code, documentation, and build scripts.
+* **More info:** See the **[CONTRIBUTING.md](CONTRIBUTING.md)**.
+* **License:** `MIT`. See the **[LICENSE](LICENSE)** file.
 
 ---
 
-## ⚖️ Відмова від відповідальності
+## ⚖️ Disclaimer
 
-Цей репозиторій створено виключно для дослідницьких цілей та забезпечення сумісності. Користувач несе повну відповідальність за дотримання місцевого законодавства та ліцензійної угоди (EULA) оригінальної гри при використанні її файлів.
+This repository was created solely for research purposes and compatibility. The user bears full responsibility for complying with local laws and the End User License Agreement (EULA) of the original game when working with game assets.
