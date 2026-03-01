@@ -71,6 +71,9 @@ xenus-dt1-decompiler/
 │       ├── Program.cs
 │       ├── DecompilerCore.cs
 │       └── MainForm.cs
+├── dist/                       ← release assets (bundled into the zip)
+│   ├── app.ico
+│   └── README.txt
 ├── .github/
 │   └── workflows/
 │       └── release.yml
@@ -102,7 +105,16 @@ The executable ends up in `bin\Release\net8.0-windows\win-x86\publish\`.
 
 ## Automatic release (GitHub Actions)
 
-The workflow at `.github/workflows/release.yml` triggers on a version tag push. It builds the project, downloads the latest `texconv.exe` from the [DirectXTex releases](https://github.com/microsoft/DirectXTex/releases), and creates a GitHub Release with the `win-x86.zip` archive (executable + `texconv.exe` + `run_decompiler.bat`):
+The workflow at `.github/workflows/release.yml` triggers on a version tag push. It builds the project, downloads the latest `texconv.exe` from the [DirectXTex releases](https://github.com/microsoft/DirectXTex/releases), and creates a GitHub Release with a `win-x86.zip` archive. The zip extracts into a single named folder:
+
+```text
+xenus-dt1-decompiler-vX.X.X/
+├── xenus-dt1-decompiler.exe
+├── texconv.exe
+├── app.ico
+├── run_decompiler.bat
+└── README.txt
+```
 
 ```powershell
 git tag v2.0.0

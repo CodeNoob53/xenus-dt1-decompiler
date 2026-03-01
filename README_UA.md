@@ -71,6 +71,9 @@ xenus-dt1-decompiler/
 │       ├── Program.cs
 │       ├── DecompilerCore.cs
 │       └── MainForm.cs
+├── dist/                       ← release-артефакти (включаються в zip)
+│   ├── app.ico
+│   └── README.txt
 ├── .github/
 │   └── workflows/
 │       └── release.yml
@@ -102,7 +105,16 @@ dotnet publish .\src\XenusDt1Decompiler\XenusDt1Decompiler.csproj -c Release -r 
 
 ## Автоматичний реліз (GitHub Actions)
 
-Workflow за адресою `.github/workflows/release.yml` запускається при пуші тегу версії. Він збирає проєкт, завантажує останній `texconv.exe` з [релізів DirectXTex](https://github.com/microsoft/DirectXTex/releases) і створює GitHub Release з архівом `win-x86.zip` (exe + `texconv.exe` + `run_decompiler.bat`):
+Workflow за адресою `.github/workflows/release.yml` запускається при пуші тегу версії. Він збирає проєкт, завантажує останній `texconv.exe` з [релізів DirectXTex](https://github.com/microsoft/DirectXTex/releases) і створює GitHub Release з архівом `win-x86.zip`. Архів розпаковується в одну іменовану папку:
+
+```text
+xenus-dt1-decompiler-vX.X.X/
+├── xenus-dt1-decompiler.exe
+├── texconv.exe
+├── app.ico
+├── run_decompiler.bat
+└── README.txt
+```
 
 ```powershell
 git tag v2.0.0
