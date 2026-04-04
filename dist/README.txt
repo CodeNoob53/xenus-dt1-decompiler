@@ -1,9 +1,13 @@
 Xenus DT1/DT2 Decompiler
 ========================
 
-Batch decoder for compressed texture cache files (*.DT1) of Xenus 2: White Gold.
-Saves decoded textures as .dds, .tga, .png, .bmp, or .jpg while preserving
-the original folder structure.
+Batch decoder for compressed texture cache files (*.DT1 / *.DT2) used in:
+  - Xenus 2: White Gold
+  - Boiling Point: Road to Hell
+  - The Precursors
+
+Extracts textures while preserving the original folder structure.
+Output formats: DDS, TGA, PNG, BMP, JPG.
 
 
 REQUIREMENTS
@@ -11,7 +15,7 @@ REQUIREMENTS
 - Windows x86 or x64
 - .NET 8 Runtime: https://dotnet.microsoft.com/download/dotnet/8.0
 - VELoader.dll from the Steam release of Xenus 2: White Gold
-  (place it next to xenus-dt1-decompiler.exe)
+  (place it next to xenus-dt1-decompiler.exe, or specify path in GUI)
 
 
 INSTALLATION
@@ -45,22 +49,43 @@ xenus-dt1-decompiler.exe <input> [output_dir] [veloader_path] [format]
 
 Examples:
   xenus-dt1-decompiler.exe "C:\Games\Xenus 2\CACHE\TEXTURES" ".\out"
-  xenus-dt1-decompiler.exe "C:\Games\Xenus 2\CACHE\TEXTURES" ".\out" "C:\Games\Xenus 2\VELoader.dll" tga
+  xenus-dt1-decompiler.exe "C:\Games\Xenus 2\CACHE\TEXTURES" ".\out" "" tga
+
+
+TEXTURE REPACKING WORKFLOW
+--------------------------
+Vital Engine 3 automatically recompresses TGA files into cache format
+when launching the game. To replace a texture:
+
+1. Extract the original texture with this tool.
+2. Edit the image (keep the same resolution, or see notes below).
+3. Place the modified TGA in the game TEXTURES folder
+   (same relative path as in the cache).
+4. Launch the game — it will recompress automatically.
+
+Note: Maximum supported texture size is 2048x2048. Recommended: 1024x1024.
+      HUD textures reference pixel coordinates in XML files — resizing them
+      requires updating those values too.
 
 
 NOTES
 -----
 - VELoader.dll from pirated copies often fails with error 1114.
   Use the DLL from the Steam release of the game.
+- All uncompressed DDS textures are automatically exported with correct RGBA
+  channel order. VELoader outputs them with swapped R/B channels (BGRA);
+  the decompiler fixes the DDS pixel format masks before saving.
+  Most visible on normal maps (_N), but applies to all uncompressed textures.
+- All textures are internally stored as DDS regardless of filename suffix.
 - texconv.exe (Microsoft DirectXTex, MIT license) is included.
   Source: https://github.com/microsoft/DirectXTex
 
 
 LICENSE
 -------
-MIT - https://github.com/CodeNoob53/xenus-dt1-decompiler/blob/main/LICENSE
+MIT - https://github.com/CodeNoob53/xenus-dt1-decompiler-release-repo/blob/main/LICENSE
 
 
-SOURCE & AUTHOR
----------------
-https://github.com/CodeNoob53/xenus-dt1-decompiler
+SOURCE & RELEASES
+-----------------
+https://github.com/CodeNoob53/xenus-dt1-decompiler-release-repo

@@ -28,7 +28,9 @@ namespace XenusDt1Decompiler
 
         private void InitializeComponent()
         {
-            this.Text = "Xenus 2 DT1/DT2 Decompiler";
+            var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            string verStr = ver is null ? "" : $" v{ver.Major}.{ver.Minor}.{ver.Build}";
+            this.Text = $"Xenus DT1/DT2 Decompiler{verStr}";
             this.Size = new Size(680, 520);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.MinimumSize = new Size(500, 400);

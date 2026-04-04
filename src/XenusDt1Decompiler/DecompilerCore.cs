@@ -232,9 +232,21 @@ namespace XenusDt1Decompiler
                     var realExt = DetectRealExtension(rawData);
 
                     // Determine final extension:
-                    // - user forced a format → convert to it
-                    // - no user format → use the real detected format (ignore filename hint)
-                    string finalExt = string.IsNullOrEmpty(userExt) ? realExt : "." + userExt.TrimStart('.');
+                    // - user forced a format → use it
+                    // - auto mode → use the format hint from the filename suffix (_TGA, _BMP, etc.)
+                    //              if no recognisable suffix → fall back to the real detected format
+                    string finalExt;
+                    if (!string.IsNullOrEmpty(userExt))
+                    {
+                        finalExt = "." + userExt.TrimStart('.');
+                    }
+                    else
+                    {
+                        var hintExt = nameInfo.ext.ToLowerInvariant();
+                        finalExt = hintExt is ".tga" or ".bmp" or ".png" or ".jpg" or ".jpeg" or ".dds"
+                            ? hintExt
+                            : realExt;
+                    }
 
                     var newFileName = nameInfo.basePath + finalExt;
                     var outPath = Path.Combine(outputRoot, outRelDir, newFileName);
@@ -242,11 +254,12 @@ namespace XenusDt1Decompiler
                     Directory.CreateDirectory(outDir);
 
                     bool converted = false;
-                    if (!string.IsNullOrEmpty(userExt) && texconvPath is not null
+                    if (texconvPath is not null
                         && !finalExt.Equals(realExt, StringComparison.OrdinalIgnoreCase))
                     {
                         // texconv needs a DDS file on disk; write a temp one then convert
                         var tmpDds = Path.ChangeExtension(outPath, ".dds");
+                        if (realExt == ".dds") rawData = FixDdsBgraMasks(rawData);
                         File.WriteAllBytes(tmpDds, rawData);
                         converted = TryConvertWithTexconv(texconvPath, tmpDds, outPath, logError);
                         if (converted && !tmpDds.Equals(outPath, StringComparison.OrdinalIgnoreCase))
@@ -257,6 +270,9 @@ namespace XenusDt1Decompiler
                     {
                         // Save with real extension (no conversion needed or conversion failed)
                         var actualPath = Path.ChangeExtension(outPath, realExt);
+                        // VELoader outputs uncompressed DDS with swapped R/B channels — fix the masks
+                        if (realExt == ".dds")
+                            rawData = FixDdsBgraMasks(rawData);
                         File.WriteAllBytes(actualPath, rawData);
                         outPath = actualPath;
                     }
@@ -306,6 +322,26 @@ namespace XenusDt1Decompiler
                 sb.Append(b >= 32 && b < 127 ? (char)b : '.');
             }
             return sb.ToString();
+        }
+
+        // VELoader outputs all uncompressed DDS textures with R and B channels swapped in the pixel
+        // format masks. Fix by swapping the R and B bitmasks in the DDS header (bytes 92-96 ↔ 100-104).
+        // Only applies to uncompressed (non-FourCC) DDS — compressed formats (DXT1/DXT5) are unaffected.
+        private static byte[] FixDdsBgraMasks(byte[] data)
+        {
+            if (data.Length < 108) return data;
+            // DDS magic check
+            if (data[0] != 'D' || data[1] != 'D' || data[2] != 'S' || data[3] != ' ') return data;
+            // FourCC at offset 84 — only fix uncompressed (fourcc == 0)
+            uint fourcc = BitConverter.ToUInt32(data, 84);
+            if (fourcc != 0) return data;
+            // Swap R mask (offset 92) and B mask (offset 100)
+            var result = (byte[])data.Clone();
+            (result[92], result[93], result[94], result[95],
+             result[100], result[101], result[102], result[103]) =
+            (result[100], result[101], result[102], result[103],
+             result[92], result[93], result[94], result[95]);
+            return result;
         }
 
         private static string DetectRealExtension(byte[] data)

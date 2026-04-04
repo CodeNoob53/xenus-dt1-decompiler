@@ -3,6 +3,9 @@ bin/
 obj/
 publish/
 
+# Locally deployed exe (use GitHub Actions release instead)
+xenus-dt1-decompiler.exe
+
 # Local decode outputs
 out/
 out_tex/

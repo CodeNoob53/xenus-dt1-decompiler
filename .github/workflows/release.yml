@@ -38,6 +38,25 @@ jobs:
           }
           "tag=$tag" >> $env:GITHUB_OUTPUT
 
+      - name: Set version from tag
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.vars.outputs.tag }}"
+          $ver = $tag.TrimStart("v")
+          $csproj = ".\src\XenusDt1Decompiler\XenusDt1Decompiler.csproj"
+          $xml = [xml](Get-Content $csproj)
+          $pg = $xml.Project.PropertyGroup
+          foreach ($node in @("Version","AssemblyVersion","FileVersion")) {
+            if ($null -eq $pg.$node) {
+              $el = $xml.CreateElement($node)
+              $pg.AppendChild($el) | Out-Null
+            }
+          }
+          $pg.Version = $ver
+          $pg.AssemblyVersion = "$ver.0"
+          $pg.FileVersion = "$ver.0"
+          $xml.Save((Resolve-Path $csproj))
+
       - name: Restore
         run: dotnet restore .\src\XenusDt1Decompiler\XenusDt1Decompiler.csproj
 

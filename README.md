@@ -3,11 +3,11 @@
 [![Platform](https://img.shields.io/badge/platform-Windows-blue.svg)](https://www.microsoft.com/windows)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Build](https://img.shields.io/badge/.NET-8.0-blueviolet.svg)](https://dotnet.microsoft.com/download)
-[![Version](https://img.shields.io/badge/version-2.0.0-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.1.0-orange.svg)](CHANGELOG.md)
 
 **[Українська версія (README_UA.md)](README_UA.md)**
 
-A tool for batch-decoding the compressed texture cache of **Xenus 2: White Gold** (`*.DT1` / `*.DT2` files) into standard image formats (`.dds`, `.tga`, `.png`, etc.) while preserving the original directory structure.
+A tool for batch-decoding the compressed texture cache of **Xenus 2: White Gold**, **Boiling Point: Road to Hell**, and **The Precursors** (`*.DT1` / `*.DT2` files) into standard image formats (`.dds`, `.tga`, `.png`, etc.) while preserving the original directory structure.
 
 ---
 
@@ -117,8 +117,8 @@ xenus-dt1-decompiler-vX.X.X/
 ```
 
 ```powershell
-git tag v2.0.0
-git push origin v2.0.0
+git tag v2.1.0
+git push origin v2.1.0
 ```
 
 ---
@@ -193,6 +193,11 @@ The directory structure relative to `input` is reproduced in `output_dir`.
 
 ## Changelog
 
+### v2.1.0
+- **Channel order fix:** All uncompressed DDS textures are now exported with correct RGBA channel order. VELoader outputs them with swapped R/B channels (BGRA); the decompiler automatically fixes the DDS pixel format masks before saving. Most visible on normal maps (`_N`), but affects all uncompressed textures. Reported by [@evgeniy-mapper](https://github.com/evgeniy-mapper).
+- **Version in title bar:** The application window now shows the version number from the assembly.
+- **Supported games:** Confirmed support for Boiling Point: Road to Hell and The Precursors in addition to Xenus 2: White Gold.
+
 ### v2.0.0
 - **GUI:** Added graphical user interface — run without arguments to open the window.
 - **Format detection:** The tool now reads magic bytes from the decompressed data and saves files with the correct extension, ignoring the misleading `_TGA` / `_BMP` filename suffix used by the engine.
@@ -211,6 +216,12 @@ The directory structure relative to `input` is reproduced in `output_dir`.
 - Only source code, documentation, and build scripts belong in the repository.
 - See [CONTRIBUTING.md](CONTRIBUTING.md) for commit and PR guidelines.
 - License: **MIT** — see [LICENSE](LICENSE).
+
+---
+
+## Credits
+
+- [@evgeniy-mapper](https://github.com/evgeniy-mapper) — reported the normal map channel swap issue (v2.1.0).
 
 ---
 

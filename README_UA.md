@@ -3,11 +3,11 @@
 [![Platform](https://img.shields.io/badge/platform-Windows-blue.svg)](https://www.microsoft.com/windows)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Build](https://img.shields.io/badge/.NET-8.0-blueviolet.svg)](https://dotnet.microsoft.com/download)
-[![Version](https://img.shields.io/badge/version-2.0.0-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.1.0-orange.svg)](CHANGELOG.md)
 
 **[English version (README.md)](README.md)**
 
-Інструмент для масового декодування стиснутого кешу текстур гри **Xenus 2: White Gold** (файли `*.DT1` / `*.DT2`) у стандартні формати зображень (`.dds`, `.tga`, `.png` тощо) зі збереженням оригінальної ієрархії папок.
+Інструмент для масового декодування стиснутого кешу текстур ігор **Xenus 2: White Gold**, **Boiling Point: Road to Hell** та **The Precursors** (файли `*.DT1` / `*.DT2`) у стандартні формати зображень (`.dds`, `.tga`, `.png` тощо) зі збереженням оригінальної ієрархії папок.
 
 ---
 
@@ -117,8 +117,8 @@ xenus-dt1-decompiler-vX.X.X/
 ```
 
 ```powershell
-git tag v2.0.0
-git push origin v2.0.0
+git tag v2.1.0
+git push origin v2.1.0
 ```
 
 ---
@@ -193,6 +193,11 @@ xenus-dt1-decompiler.exe <вхід> [вихідна_папка] [шлях_до_v
 
 ## Changelog
 
+### v2.1.0
+- **Фікс порядку каналів:** Усі нестиснуті DDS-текстури тепер експортуються з правильним порядком каналів RGBA. VELoader видає їх зі зміненими місцями каналами R та B (BGRA); декомпілер автоматично виправляє маски пікселів у заголовку DDS перед збереженням. Найпомітніше на normal maps (`_N`), але стосується всіх нестиснутих текстур. Проблему повідомив [@evgeniy-mapper](https://github.com/evgeniy-mapper).
+- **Версія у заголовку вікна:** Вікно застосунку тепер відображає номер версії з assembly.
+- **Підтримувані ігри:** Підтверджено підтримку Boiling Point: Road to Hell та The Precursors на додачу до Xenus 2: White Gold.
+
 ### v2.0.0
 - **GUI:** Додано графічний інтерфейс — запуск без аргументів відкриває вікно застосунку.
 - **Визначення формату:** Утиліта тепер читає magic bytes з розпакованих даних і зберігає файли з правильним розширенням, ігноруючи оманливі суфікси `_TGA` / `_BMP` у назвах файлів рушія.
@@ -211,6 +216,12 @@ xenus-dt1-decompiler.exe <вхід> [вихідна_папка] [шлях_до_v
 - У репозиторій належать лише вихідний код, документація та скрипти збірки.
 - Деталі — у файлі [CONTRIBUTING.md](CONTRIBUTING.md).
 - Ліцензія: **MIT** — див. [LICENSE](LICENSE).
+
+---
+
+## Подяки
+
+- [@evgeniy-mapper](https://github.com/evgeniy-mapper) — повідомив про проблему з перестановкою каналів у normal maps (v2.1.0).
 
 ---
 
