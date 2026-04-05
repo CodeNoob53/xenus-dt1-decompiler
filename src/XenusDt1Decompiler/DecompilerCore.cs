@@ -258,8 +258,8 @@ namespace XenusDt1Decompiler
                         && !finalExt.Equals(realExt, StringComparison.OrdinalIgnoreCase))
                     {
                         // texconv needs a DDS file on disk; write a temp one then convert
+                        // Do NOT fix BGRA masks here — texconv understands the native BGRA layout
                         var tmpDds = Path.ChangeExtension(outPath, ".dds");
-                        if (realExt == ".dds") rawData = FixDdsBgraMasks(rawData);
                         File.WriteAllBytes(tmpDds, rawData);
                         converted = TryConvertWithTexconv(texconvPath, tmpDds, outPath, logError);
                         if (converted && !tmpDds.Equals(outPath, StringComparison.OrdinalIgnoreCase))
