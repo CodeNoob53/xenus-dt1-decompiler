@@ -81,9 +81,9 @@ namespace XenusDt1Decompiler
                 return (0, 0);
             }
 
-            string? texconvPath = string.IsNullOrEmpty(userExt) ? null : ResolveTexconv();
-            if (!string.IsNullOrEmpty(userExt) && texconvPath is null)
-                logError("[WARN] texconv.exe not found — files will be saved as .dds regardless of format selection.");
+            string? texconvPath = ResolveTexconv();
+            if (texconvPath is null)
+                logError("[WARN] texconv.exe not found — format conversion unavailable, files will be saved as .dds.");
 
             int ok = 0;
             int fail = 0;
@@ -258,9 +258,9 @@ namespace XenusDt1Decompiler
                         && !finalExt.Equals(realExt, StringComparison.OrdinalIgnoreCase))
                     {
                         // texconv needs a DDS file on disk; write a temp one then convert
-                        // Do NOT fix BGRA masks here — texconv understands the native BGRA layout
                         var tmpDds = Path.ChangeExtension(outPath, ".dds");
-                        File.WriteAllBytes(tmpDds, rawData);
+                        var ddsData = realExt == ".dds" ? FixDdsBgraMasks(rawData) : rawData;
+                        File.WriteAllBytes(tmpDds, ddsData);
                         converted = TryConvertWithTexconv(texconvPath, tmpDds, outPath, logError);
                         if (converted && !tmpDds.Equals(outPath, StringComparison.OrdinalIgnoreCase))
                             File.Delete(tmpDds);
@@ -270,7 +270,6 @@ namespace XenusDt1Decompiler
                     {
                         // Save with real extension (no conversion needed or conversion failed)
                         var actualPath = Path.ChangeExtension(outPath, realExt);
-                        // VELoader outputs uncompressed DDS with swapped R/B channels — fix the masks
                         if (realExt == ".dds")
                             rawData = FixDdsBgraMasks(rawData);
                         File.WriteAllBytes(actualPath, rawData);
@@ -324,23 +323,45 @@ namespace XenusDt1Decompiler
             return sb.ToString();
         }
 
-        // VELoader outputs all uncompressed DDS textures with R and B channels swapped in the pixel
-        // format masks. Fix by swapping the R and B bitmasks in the DDS header (bytes 92-96 ↔ 100-104).
-        // Only applies to uncompressed (non-FourCC) DDS — compressed formats (DXT1/DXT5) are unaffected.
+        // VELoader stores uncompressed 32-bit DDS pixels with channel layout:
+        //   byte0=B(mask 0x0000FF), byte1=G(mask 0x00FF00), byte2=R(mask 0xFF0000), byte3=A
+        // i.e. BGRA in memory, but the masks describe it as "R at 0xFF0000" = byte2.
+        // The correct output order for standard tools is RGBA in memory (R=byte0).
+        // Remap: new[R,G,B,A] = old[A, B, G, R] = old[byte3, byte0, byte1, byte2]
+        // Also update masks to standard RGBA.
+        // Only applies to uncompressed 32-bit (non-FourCC) DDS.
         private static byte[] FixDdsBgraMasks(byte[] data)
         {
-            if (data.Length < 108) return data;
-            // DDS magic check
+            if (data.Length < 128) return data;
             if (data[0] != 'D' || data[1] != 'D' || data[2] != 'S' || data[3] != ' ') return data;
-            // FourCC at offset 84 — only fix uncompressed (fourcc == 0)
             uint fourcc = BitConverter.ToUInt32(data, 84);
             if (fourcc != 0) return data;
-            // Swap R mask (offset 92) and B mask (offset 100)
+            int bpp = (int)BitConverter.ToUInt32(data, 88);
+            if (bpp != 32) return data;
+
             var result = (byte[])data.Clone();
-            (result[92], result[93], result[94], result[95],
-             result[100], result[101], result[102], result[103]) =
-            (result[100], result[101], result[102], result[103],
-             result[92], result[93], result[94], result[95]);
+
+            // Fix header masks to standard RGBA
+            BitConverter.GetBytes(0x000000FFu).CopyTo(result, 92);  // R
+            BitConverter.GetBytes(0x0000FF00u).CopyTo(result, 96);  // G
+            BitConverter.GetBytes(0x00FF0000u).CopyTo(result, 100); // B
+            BitConverter.GetBytes(0xFF000000u).CopyTo(result, 104); // A
+
+            // Remap pixel bytes: new[0,1,2,3] = old[3,0,1,2]
+            // old: byte0=B, byte1=G, byte2=R, byte3=A
+            // new: byte0=R=old[3]? No: correct_R=old_A=old[byte3], correct_G=old_B=old[byte0], correct_B=old_G=old[byte1], correct_A=old_R=old[byte2]
+            for (int i = 128; i + 3 < result.Length; i += 4)
+            {
+                byte oldB  = data[i];      // old byte0 = B channel
+                byte oldG  = data[i + 1];  // old byte1 = G channel
+                byte oldR  = data[i + 2];  // old byte2 = R channel
+                byte oldA  = data[i + 3];  // old byte3 = A channel
+                result[i]     = oldA;  // new R = old A
+                result[i + 1] = oldB;  // new G = old B
+                result[i + 2] = oldG;  // new B = old G
+                result[i + 3] = 255;   // new A = fully opaque (old R is always 0)
+            }
+
             return result;
         }
 
