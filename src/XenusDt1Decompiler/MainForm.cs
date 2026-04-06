@@ -11,6 +11,7 @@ namespace XenusDt1Decompiler
         private TextBox txtInput = null!;
         private TextBox txtOutput = null!;
         private TextBox txtVeloader = null!;
+        private TextBox txtMaterials = null!;
         private ComboBox cmbFormat = null!;
         private Button btnStart = null!;
         private RichTextBox rtbLog = null!;
@@ -18,6 +19,7 @@ namespace XenusDt1Decompiler
         private Button btnBrowseInput = null!;
         private Button btnBrowseOutput = null!;
         private Button btnBrowseVeloader = null!;
+        private Button btnBrowseMaterials = null!;
 
         public MainForm()
         {
@@ -42,7 +44,7 @@ namespace XenusDt1Decompiler
             var panelTop = new TableLayoutPanel
             {
                 ColumnCount = 3,
-                RowCount = 4,
+                RowCount = 5,
                 Dock = DockStyle.Top,
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
@@ -51,8 +53,8 @@ namespace XenusDt1Decompiler
             panelTop.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100));
             panelTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             panelTop.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 80));
-            
-            for (int i = 0; i < 4; i++)
+
+            for (int i = 0; i < 5; i++)
             {
                 panelTop.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             }
@@ -81,13 +83,22 @@ namespace XenusDt1Decompiler
             btnBrowseVeloader.Click += BtnBrowseVeloader_Click;
             panelTop.Controls.Add(btnBrowseVeloader, 2, 2);
 
-            // Row 4: Format
-            panelTop.Controls.Add(new Label { Text = "Output Format:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 3);
-            
+            // Row 4: Materials (optional)
+            panelTop.Controls.Add(new Label { Text = "Materials:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 3);
+            txtMaterials = new TextBox { Dock = DockStyle.Fill, Margin = new Padding(0, 5, 5, 0) };
+            txtMaterials.PlaceholderText = "optional — auto-detected from game folder";
+            panelTop.Controls.Add(txtMaterials, 1, 3);
+            btnBrowseMaterials = new Button { Text = "Browse...", Dock = DockStyle.Fill, Margin = new Padding(0, 3, 0, 3) };
+            btnBrowseMaterials.Click += BtnBrowseMaterials_Click;
+            panelTop.Controls.Add(btnBrowseMaterials, 2, 3);
+
+            // Row 5: Format
+            panelTop.Controls.Add(new Label { Text = "Output Format:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 4);
+
             cmbFormat = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150, Margin = new Padding(0, 5, 5, 0) };
             cmbFormat.Items.AddRange(new object[] { "Auto (from filename)", "dds", "tga", "bmp", "png", "jpg" });
             cmbFormat.SelectedIndex = 0;
-            panelTop.Controls.Add(cmbFormat, 1, 3);
+            panelTop.Controls.Add(cmbFormat, 1, 4);
 
             this.Controls.Add(panelTop);
 
@@ -191,6 +202,15 @@ namespace XenusDt1Decompiler
             }
         }
 
+        private void BtnBrowseMaterials_Click(object? sender, EventArgs e)
+        {
+            using var fbd = new FolderBrowserDialog { Description = "Select game MATERIALS folder (for accurate normal map detection)" };
+            if (fbd.ShowDialog() == DialogResult.OK)
+            {
+                txtMaterials.Text = fbd.SelectedPath;
+            }
+        }
+
         private async void BtnStart_Click(object? sender, EventArgs e)
         {
             string input = txtInput.Text.Trim();
@@ -216,6 +236,8 @@ namespace XenusDt1Decompiler
                 return;
             }
 
+            string materials = txtMaterials.Text.Trim();
+
             SetUIState(false);
             rtbLog.Clear();
             LogInfo("--- Starting Decompilation ---");
@@ -228,7 +250,7 @@ namespace XenusDt1Decompiler
 
             await Task.Run(() =>
             {
-                var res = DecompilerCore.DecodeDirectory(input, output, veloader, ext, LogInfo, LogError);
+                var res = DecompilerCore.DecodeDirectory(input, output, veloader, ext, materials, LogInfo, LogError);
                 LogInfo("");
                 LogInfo($"--- Finished. OK: {res.Ok}, FAIL: {res.Fail} ---");
                 ((IProgress<string>)progress).Report($"Done. OK: {res.Ok}, FAIL: {res.Fail}");

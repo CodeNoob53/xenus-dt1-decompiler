@@ -42,6 +42,7 @@ namespace XenusDt1Decompiler
                 ? Path.GetFullPath(args[2])
                 : DecompilerCore.ResolveDefaultVELoader();
             var userExt = args.Length >= 4 ? args[3] : null;
+            var materialsPath = args.Length >= 5 && !string.IsNullOrWhiteSpace(args[4]) ? Path.GetFullPath(args[4]) : null;
 
             if (!File.Exists(veloaderPath))
             {
@@ -61,7 +62,7 @@ namespace XenusDt1Decompiler
 
             if (Directory.Exists(inputPath))
             {
-                var res = DecompilerCore.DecodeDirectory(inputPath, outputRoot, veloaderPath, userExt,
+                var res = DecompilerCore.DecodeDirectory(inputPath, outputRoot, veloaderPath, userExt, materialsPath,
                     msg => Console.WriteLine(msg),
                     err => Console.Error.WriteLine(err));
                 
@@ -80,8 +81,11 @@ namespace XenusDt1Decompiler
         private static void PrintUsage()
         {
             Console.WriteLine("Usage:");
-            Console.WriteLine($"  {AppName} <input_file.dt1|dt2> [output_dir] [path_to_veloader.dll] [format]");
-            Console.WriteLine($"  {AppName} <input_dir> [output_dir] [path_to_veloader.dll] [format]");
+            Console.WriteLine($"  {AppName} <input_file.dt1|dt2> [output_dir] [veloader.dll] [format] [materials_dir]");
+            Console.WriteLine($"  {AppName} <input_dir>           [output_dir] [veloader.dll] [format] [materials_dir]");
+            Console.WriteLine();
+            Console.WriteLine("  materials_dir  Path to the game MATERIALS/ folder (for normal map detection).");
+            Console.WriteLine("                 Auto-detected if omitted. Pass \"\" to skip auto-detection.");
             Console.WriteLine();
             Console.WriteLine("Run without arguments to start the Graphical User Interface (GUI).");
         }

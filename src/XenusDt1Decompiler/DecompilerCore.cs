@@ -131,11 +131,22 @@ namespace XenusDt1Decompiler
             return result;
         }
 
+        // Overload without explicit materialsPath — auto-discovers from veloaderPath/inputPath.
         public static (int Ok, int Fail) DecodeDirectory(
             string inputPath,
             string outputRoot,
             string veloaderPath,
             string? userExt,
+            Action<string> logInfo,
+            Action<string> logError) =>
+            DecodeDirectory(inputPath, outputRoot, veloaderPath, userExt, null, logInfo, logError);
+
+        public static (int Ok, int Fail) DecodeDirectory(
+            string inputPath,
+            string outputRoot,
+            string veloaderPath,
+            string? userExt,
+            string? explicitMaterialsPath,
             Action<string> logInfo,
             Action<string> logError)
         {
@@ -154,9 +165,17 @@ namespace XenusDt1Decompiler
             if (texconvPath is null)
                 logError("[WARN] texconv.exe not found — format conversion unavailable, files will be saved as .dds.");
 
-            // Load normal map database from MATERIALS directories (game patches + GrpUnpacker base)
-            var materialsDirs = ResolveMaterialsDirs(veloaderPath, inputPath);
-            var normalMapSet = BuildNormalMapSet(materialsDirs, logInfo);
+            // Build normal map database: explicit path takes priority, then auto-discover, then _N suffix.
+            HashSet<string>? normalMapSet;
+            if (!string.IsNullOrWhiteSpace(explicitMaterialsPath) && Directory.Exists(explicitMaterialsPath))
+            {
+                normalMapSet = BuildNormalMapSet(new[] { explicitMaterialsPath }, logInfo);
+            }
+            else
+            {
+                var materialsDirs = ResolveMaterialsDirs(veloaderPath, inputPath);
+                normalMapSet = BuildNormalMapSet(materialsDirs, logInfo);
+            }
             if (normalMapSet is null)
                 logInfo("[INFO] MATERIALS directory not found — using _N suffix heuristic for normal map detection.");
 
