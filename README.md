@@ -56,14 +56,9 @@ Offset  Size  Description
 
 VELoader stores normal map textures with a non-standard channel layout. The tool remaps pixel bytes to standard RGBA so normal maps render correctly in all viewers.
 
-Normal maps are identified by scanning `.MAT` material files for `Texture1_BUMP:` entries. The tool searches for a `MATERIALS/` directory automatically — no manual configuration needed:
+Normal maps are identified by scanning `.MAT` material files for `Texture1_BUMP:` entries. The tool automatically searches for the game's `MATERIALS/` directory — no manual configuration needed.
 
-| Location searched | Notes |
-|---|---|
-| `<game root>/MATERIALS/` | Game patch overrides (highest priority) |
-| `<game root>/GrpUnpacker/MATERIALS/` | Base GRP data unpacked by GrpUnpacker |
-
-The game root is resolved from the paths you provide (input folder and VELoader location). If neither `MATERIALS/` directory is found, the tool falls back to detecting normal maps by `_N` / `_N_` filename suffix.
+The game root is resolved from the paths you provide (input folder and VELoader location). If `MATERIALS/` is not found, the tool falls back to detecting normal maps by `_N` / `_N_` filename suffix.
 
 ---
 
