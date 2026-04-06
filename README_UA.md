@@ -3,7 +3,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows-blue.svg)](https://www.microsoft.com/windows)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Build](https://img.shields.io/badge/.NET-8.0-blueviolet.svg)](https://dotnet.microsoft.com/download)
-[![Version](https://img.shields.io/badge/version-2.1.0-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.1.2-orange.svg)](CHANGELOG.md)
 
 **[English version (README.md)](README.md)**
 
@@ -193,8 +193,15 @@ xenus-dt1-decompiler.exe <вхід> [вихідна_папка] [шлях_до_v
 
 ## Changelog
 
+### v2.1.2
+- **Фікс регресії в normal maps (v2.1.1):** v2.1.1 помилково застосовував перестановку каналів до ВСІХ нестиснутих DDS-текстур, що ламало дифузні, HUD, SKY та інші текстури. Перестановка байтів тепер застосовується виключно до normal maps (файли із суфіксом `_N` або `_N_` у назві). Всі інші текстури зберігаються без змін. Проблему повідомив [@evgeniy-mapper](https://github.com/evgeniy-mapper).
+  > **Примітка:** Визначення за суфіксом `_N` — тимчасове рішення. Для точної ідентифікації необхідно читати `.MAT` файли матеріалів гри (з архіву `CACHE/MATERIALS.DAT`), які містять точний тип текстури для кожного ресурсу — включно з полем opacity/type, що ідентифікує normal maps. Це буде вирішено в майбутньому релізі.
+
+### v2.1.1
+- **Перестановка байтів normal map:** Окрім виправлення масок формату DDS, тепер відбувається перестановка самих байтів пікселів, тому normal maps коректно відображаються у всіх переглядачах (не лише тих, що враховують маски DDS).
+
 ### v2.1.0
-- **Фікс порядку каналів:** Усі нестиснуті DDS-текстури тепер експортуються з правильним порядком каналів RGBA. VELoader видає їх зі зміненими місцями каналами R та B (BGRA); декомпілер автоматично виправляє маски пікселів у заголовку DDS перед збереженням. Найпомітніше на normal maps (`_N`), але стосується всіх нестиснутих текстур. Проблему повідомив [@evgeniy-mapper](https://github.com/evgeniy-mapper).
+- **Фікс порядку каналів:** Normal map DDS-текстури тепер експортуються з правильним порядком каналів RGBA. VELoader видає їх зі зміненим порядком каналів; декомпілер автоматично виправляє маски пікселів у заголовку DDS перед збереженням.
 - **Версія у заголовку вікна:** Вікно застосунку тепер відображає номер версії з assembly.
 - **Підтримувані ігри:** Підтверджено підтримку Boiling Point: Road to Hell та The Precursors на додачу до Xenus 2: White Gold.
 

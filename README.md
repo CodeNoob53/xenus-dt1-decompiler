@@ -3,7 +3,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows-blue.svg)](https://www.microsoft.com/windows)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Build](https://img.shields.io/badge/.NET-8.0-blueviolet.svg)](https://dotnet.microsoft.com/download)
-[![Version](https://img.shields.io/badge/version-2.1.0-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.1.2-orange.svg)](CHANGELOG.md)
 
 **[Українська версія (README_UA.md)](README_UA.md)**
 
@@ -193,8 +193,15 @@ The directory structure relative to `input` is reproduced in `output_dir`.
 
 ## Changelog
 
+### v2.1.2
+- **Normal map channel fix (regression fix):** v2.1.1 incorrectly applied channel remapping to ALL uncompressed DDS textures, breaking diffuse, HUD, SKY, and other textures. The pixel-level channel swap is now restricted to normal maps only (filenames ending in `_N` or containing `_N_`). All other textures are exported as-is from VELoader. Reported by [@evgeniy-mapper](https://github.com/evgeniy-mapper).
+  > **Note:** The `_N` suffix heuristic is a temporary solution. Full accuracy requires reading the game's `.MAT` material files (from `CACHE/MATERIALS.DAT`) which contain the exact texture type per asset — including the opacity/type field that identifies normal maps. This will be addressed in a future release.
+
+### v2.1.1
+- **Normal map pixel swap:** In addition to fixing the DDS pixel format masks, the actual pixel bytes are now reordered so that normal maps render correctly in all viewers (not just tools that respect DDS channel masks).
+
 ### v2.1.0
-- **Channel order fix:** All uncompressed DDS textures are now exported with correct RGBA channel order. VELoader outputs them with swapped R/B channels (BGRA); the decompiler automatically fixes the DDS pixel format masks before saving. Most visible on normal maps (`_N`), but affects all uncompressed textures. Reported by [@evgeniy-mapper](https://github.com/evgeniy-mapper).
+- **Channel order fix:** Normal map DDS textures are now exported with correct RGBA channel order. VELoader outputs them with swapped channels; the decompiler automatically fixes the DDS pixel format masks before saving.
 - **Version in title bar:** The application window now shows the version number from the assembly.
 - **Supported games:** Confirmed support for Boiling Point: Road to Hell and The Precursors in addition to Xenus 2: White Gold.
 

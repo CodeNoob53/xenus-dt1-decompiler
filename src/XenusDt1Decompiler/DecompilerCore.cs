@@ -253,13 +253,14 @@ namespace XenusDt1Decompiler
                     var outDir = Path.GetDirectoryName(outPath)!;
                     Directory.CreateDirectory(outDir);
 
+                    bool isNormalMap = IsNormalMap(filePath);
                     bool converted = false;
                     if (texconvPath is not null
                         && !finalExt.Equals(realExt, StringComparison.OrdinalIgnoreCase))
                     {
                         // texconv needs a DDS file on disk; write a temp one then convert
                         var tmpDds = Path.ChangeExtension(outPath, ".dds");
-                        var ddsData = realExt == ".dds" ? FixDdsBgraMasks(rawData) : rawData;
+                        var ddsData = (realExt == ".dds" && isNormalMap) ? FixNormalMapChannels(rawData) : rawData;
                         File.WriteAllBytes(tmpDds, ddsData);
                         converted = TryConvertWithTexconv(texconvPath, tmpDds, outPath, logError);
                         if (converted && !tmpDds.Equals(outPath, StringComparison.OrdinalIgnoreCase))
@@ -270,8 +271,8 @@ namespace XenusDt1Decompiler
                     {
                         // Save with real extension (no conversion needed or conversion failed)
                         var actualPath = Path.ChangeExtension(outPath, realExt);
-                        if (realExt == ".dds")
-                            rawData = FixDdsBgraMasks(rawData);
+                        if (realExt == ".dds" && isNormalMap)
+                            rawData = FixNormalMapChannels(rawData);
                         File.WriteAllBytes(actualPath, rawData);
                         outPath = actualPath;
                     }
@@ -323,14 +324,34 @@ namespace XenusDt1Decompiler
             return sb.ToString();
         }
 
-        // VELoader stores uncompressed 32-bit DDS pixels with channel layout:
-        //   byte0=B(mask 0x0000FF), byte1=G(mask 0x00FF00), byte2=R(mask 0xFF0000), byte3=A
-        // i.e. BGRA in memory, but the masks describe it as "R at 0xFF0000" = byte2.
-        // The correct output order for standard tools is RGBA in memory (R=byte0).
-        // Remap: new[R,G,B,A] = old[A, B, G, R] = old[byte3, byte0, byte1, byte2]
-        // Also update masks to standard RGBA.
-        // Only applies to uncompressed 32-bit (non-FourCC) DDS.
-        private static byte[] FixDdsBgraMasks(byte[] data)
+        // Normal map detection: filename contains "_N" as a standalone suffix.
+        // e.g. ROCK_N.DT1, ROCK_N_DXT.DT1, ROAD_N_01.DT1 — all match.
+        // Standard diffuse/HUD/SKY/etc. textures do NOT match.
+        //
+        // NOTE: This is a temporary heuristic. The game's MATERIALS.DAT archive
+        // contains .MAT files per actor/prop that store the exact texture type
+        // (including Texture1_Opacity: 12 for normal maps). A future version of
+        // this tool should use .MAT metadata for accurate, name-independent detection.
+        private static bool IsNormalMap(string filePath)
+        {
+            var name = Path.GetFileNameWithoutExtension(filePath).ToUpperInvariant();
+            // Match "_N" at end or "_N_" anywhere (but not "_NOISE", "_NORMAL" etc.)
+            if (name.EndsWith("_N")) return true;
+            if (name.Contains("_N_")) return true;
+            return false;
+        }
+
+        // VELoader outputs uncompressed 32-bit DDS with BGRA pixel layout but masks that
+        // say R=0xFF0000 (byte2). Standard tools respect the masks, so diffuse/HUD textures
+        // look correct without any fix. Normal maps however have channels packed as:
+        //   VELoader byte0=B(X), byte1=G(Y), byte2=R(unused/0), byte3=A(Z)
+        // and they need to be remapped to standard RGBA so that:
+        //   new byte0=R = old A (Z stored in alpha)
+        //   new byte1=G = old B (X stored in blue)
+        //   new byte2=B = old G (Y stored in green)
+        //   new byte3=A = 255   (old R/byte2 is always 0, not useful)
+        // Only call this for normal maps (_N suffix). For all other textures, return as-is.
+        private static byte[] FixNormalMapChannels(byte[] data)
         {
             if (data.Length < 128) return data;
             if (data[0] != 'D' || data[1] != 'D' || data[2] != 'S' || data[3] != ' ') return data;
@@ -341,25 +362,23 @@ namespace XenusDt1Decompiler
 
             var result = (byte[])data.Clone();
 
-            // Fix header masks to standard RGBA
-            BitConverter.GetBytes(0x000000FFu).CopyTo(result, 92);  // R
-            BitConverter.GetBytes(0x0000FF00u).CopyTo(result, 96);  // G
-            BitConverter.GetBytes(0x00FF0000u).CopyTo(result, 100); // B
-            BitConverter.GetBytes(0xFF000000u).CopyTo(result, 104); // A
+            // Update masks to standard RGBA to match the remapped pixel layout
+            BitConverter.GetBytes(0x000000FFu).CopyTo(result, 92);  // R mask
+            BitConverter.GetBytes(0x0000FF00u).CopyTo(result, 96);  // G mask
+            BitConverter.GetBytes(0x00FF0000u).CopyTo(result, 100); // B mask
+            BitConverter.GetBytes(0xFF000000u).CopyTo(result, 104); // A mask
 
-            // Remap pixel bytes: new[0,1,2,3] = old[3,0,1,2]
-            // old: byte0=B, byte1=G, byte2=R, byte3=A
-            // new: byte0=R=old[3]? No: correct_R=old_A=old[byte3], correct_G=old_B=old[byte0], correct_B=old_G=old[byte1], correct_A=old_R=old[byte2]
+            // Remap pixel bytes for normal map channel layout
             for (int i = 128; i + 3 < result.Length; i += 4)
             {
-                byte oldB  = data[i];      // old byte0 = B channel
-                byte oldG  = data[i + 1];  // old byte1 = G channel
-                byte oldR  = data[i + 2];  // old byte2 = R channel
-                byte oldA  = data[i + 3];  // old byte3 = A channel
-                result[i]     = oldA;  // new R = old A
-                result[i + 1] = oldB;  // new G = old B
-                result[i + 2] = oldG;  // new B = old G
-                result[i + 3] = 255;   // new A = fully opaque (old R is always 0)
+                byte oldB = data[i];      // X component (stored in B)
+                byte oldG = data[i + 1];  // Y component (stored in G)
+                // byte2 = R is always 0, unused
+                byte oldA = data[i + 3];  // Z component (stored in A)
+                result[i]     = oldA;  // new R = Z
+                result[i + 1] = oldB;  // new G = X
+                result[i + 2] = oldG;  // new B = Y
+                result[i + 3] = 255;   // new A = fully opaque
             }
 
             return result;
