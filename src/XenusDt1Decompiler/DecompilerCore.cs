@@ -62,6 +62,75 @@ namespace XenusDt1Decompiler
             return Path.Combine(cwd, "VELoader.dll");
         }
 
+        // Builds a set of normal map texture base names (case-insensitive, no extension, no path)
+        // by scanning all .MAT files in the given MATERIALS directories for "Texture1_BUMP:" lines.
+        // Merges results from all provided directories (game patch overrides + base GRP).
+        // Returns null if none of the directories exist.
+        public static HashSet<string>? BuildNormalMapSet(IEnumerable<string> materialsDirs, Action<string>? logInfo = null)
+        {
+            var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var scanned = new List<string>();
+
+            foreach (var dir in materialsDirs)
+            {
+                if (!Directory.Exists(dir)) continue;
+                scanned.Add(dir);
+                foreach (var matFile in Directory.EnumerateFiles(dir, "*.MAT", SearchOption.AllDirectories))
+                {
+                    foreach (var line in File.ReadLines(matFile))
+                    {
+                        var trimmed = line.AsSpan().TrimStart();
+                        if (!trimmed.StartsWith("Texture1_BUMP:", StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        int colon = line.IndexOf(':');
+                        if (colon < 0) continue;
+                        var value = line.AsSpan(colon + 1).Trim();
+                        if (value.IsEmpty) continue;
+                        // value is like "Animals\Cos_Krab_n.tga" — take filename stem only
+                        var stem = Path.GetFileNameWithoutExtension(value.ToString());
+                        if (!string.IsNullOrEmpty(stem))
+                            set.Add(stem);
+                    }
+                }
+            }
+
+            if (scanned.Count == 0) return null;
+            var labels = scanned.Select(d => Path.GetFileName(Path.GetDirectoryName(d)) + "/" + Path.GetFileName(d));
+            logInfo?.Invoke($"[INFO] Normal map database: {set.Count} textures from {string.Join(" + ", labels)}");
+            return set;
+        }
+
+        // Finds all MATERIALS directories relative to veloaderPath or inputPath.
+        // Collects both the base GRP data (GrpUnpacker/MATERIALS) and game patch overrides (MATERIALS/).
+        // Results are ordered: patch/game-root first (higher priority), GrpUnpacker second.
+        public static List<string> ResolveMaterialsDirs(string veloaderPath, string inputPath)
+        {
+            var roots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            void AddRoot(string? r) { if (r is not null) roots.Add(r); }
+
+            AddRoot(Path.GetDirectoryName(veloaderPath));
+            AddRoot(Path.GetDirectoryName(inputPath));
+            // Walk up: CACHE/TEXTURES → CACHE → game root
+            foreach (var r in roots.ToList())
+            {
+                AddRoot(Path.GetDirectoryName(r));
+                AddRoot(Path.GetDirectoryName(Path.GetDirectoryName(r) ?? ""));
+            }
+
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var result = new List<string>();
+            void TryAdd(string path) { if (Directory.Exists(path) && seen.Add(path)) result.Add(path); }
+
+            foreach (var root in roots)
+            {
+                // Direct MATERIALS/ in root (game patches, higher priority)
+                TryAdd(Path.Combine(root, "MATERIALS"));
+                // GrpUnpacker/MATERIALS (base GRP data)
+                TryAdd(Path.Combine(root, "GrpUnpacker", "MATERIALS"));
+            }
+            return result;
+        }
+
         public static (int Ok, int Fail) DecodeDirectory(
             string inputPath,
             string outputRoot,
@@ -85,13 +154,19 @@ namespace XenusDt1Decompiler
             if (texconvPath is null)
                 logError("[WARN] texconv.exe not found — format conversion unavailable, files will be saved as .dds.");
 
+            // Load normal map database from MATERIALS directories (game patches + GrpUnpacker base)
+            var materialsDirs = ResolveMaterialsDirs(veloaderPath, inputPath);
+            var normalMapSet = BuildNormalMapSet(materialsDirs, logInfo);
+            if (normalMapSet is null)
+                logInfo("[INFO] MATERIALS directory not found — using _N suffix heuristic for normal map detection.");
+
             int ok = 0;
             int fail = 0;
             foreach (var file in files)
             {
                 try
                 {
-                    if (DecodeOneFile(file, outputRoot, veloaderPath, inputPath, userExt, texconvPath, logInfo, logError))
+                    if (DecodeOneFile(file, outputRoot, veloaderPath, inputPath, userExt, texconvPath, normalMapSet, logInfo, logError))
                     {
                         ok++;
                     }
@@ -119,6 +194,18 @@ namespace XenusDt1Decompiler
             string? inputRoot,
             string? userExt,
             string? texconvPath,
+            Action<string> logInfo,
+            Action<string> logError) =>
+            DecodeOneFile(filePath, outputRoot, veloaderPath, inputRoot, userExt, texconvPath, null, logInfo, logError);
+
+        public static bool DecodeOneFile(
+            string filePath,
+            string outputRoot,
+            string veloaderPath,
+            string? inputRoot,
+            string? userExt,
+            string? texconvPath,
+            HashSet<string>? normalMapSet,
             Action<string> logInfo,
             Action<string> logError)
         {
@@ -253,7 +340,9 @@ namespace XenusDt1Decompiler
                     var outDir = Path.GetDirectoryName(outPath)!;
                     Directory.CreateDirectory(outDir);
 
-                    bool isNormalMap = IsNormalMap(filePath);
+                    bool isNormalMap = normalMapSet is not null
+                        ? IsNormalMapBySet(filePath, normalMapSet)
+                        : IsNormalMapBySuffix(filePath);
                     bool converted = false;
                     if (texconvPath is not null
                         && !finalExt.Equals(realExt, StringComparison.OrdinalIgnoreCase))
@@ -324,18 +413,24 @@ namespace XenusDt1Decompiler
             return sb.ToString();
         }
 
-        // Normal map detection: filename contains "_N" as a standalone suffix.
+        // Accurate normal map detection using the MATERIALS database.
+        // Checks whether the DT1 base name (without extension and format suffix like _TGA)
+        // matches any texture listed as Texture1_BUMP in the .MAT files.
+        private static bool IsNormalMapBySet(string filePath, HashSet<string> normalMapSet)
+        {
+            // DT1 filename: e.g. "COS_KRAB_DARK_N_TGA.DT1" → base = "COS_KRAB_DARK_N"
+            var nameInfo = ParseFileNameAndExtension(filePath, null);
+            // nameInfo.basePath is the stem without the _TGA/_DXT etc. suffix
+            var stem = Path.GetFileName(nameInfo.basePath);
+            return normalMapSet.Contains(stem);
+        }
+
+        // Fallback heuristic: filename contains "_N" as a standalone suffix.
         // e.g. ROCK_N.DT1, ROCK_N_DXT.DT1, ROAD_N_01.DT1 — all match.
-        // Standard diffuse/HUD/SKY/etc. textures do NOT match.
-        //
-        // NOTE: This is a temporary heuristic. The game's MATERIALS.DAT archive
-        // contains .MAT files per actor/prop that store the exact texture type
-        // (including Texture1_Opacity: 12 for normal maps). A future version of
-        // this tool should use .MAT metadata for accurate, name-independent detection.
-        private static bool IsNormalMap(string filePath)
+        // Used only when the MATERIALS directory is not available.
+        private static bool IsNormalMapBySuffix(string filePath)
         {
             var name = Path.GetFileNameWithoutExtension(filePath).ToUpperInvariant();
-            // Match "_N" at end or "_N_" anywhere (but not "_NOISE", "_NORMAL" etc.)
             if (name.EndsWith("_N")) return true;
             if (name.Contains("_N_")) return true;
             return false;

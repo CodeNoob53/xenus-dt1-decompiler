@@ -72,13 +72,12 @@ NOTES
 -----
 - VELoader.dll from pirated copies often fails with error 1114.
   Use the DLL from the Steam release of the game.
-- Normal map textures (_N suffix) are automatically exported with corrected
-  channel order. VELoader outputs them with a non-standard channel layout;
-  the decompiler remaps the pixel bytes and fixes the DDS format masks.
-  Only applies to files with _N or _N_ in the name; all other textures
-  are saved as-is from VELoader.
-  Note: _N suffix detection is a temporary heuristic. Future versions will
-  use .MAT material files (CACHE/MATERIALS.DAT) for accurate detection.
+- Normal map textures are automatically exported with corrected channel order.
+  VELoader outputs them with a non-standard layout; the decompiler remaps
+  the pixel bytes and fixes the DDS format masks. All other textures are
+  saved as-is. Normal maps are identified using the game's .MAT material
+  files (MATERIALS/ directory next to the game root or GrpUnpacker/MATERIALS/).
+  Falls back to _N/_N_ filename suffix heuristic if no MATERIALS/ is found.
 - All textures are internally stored as DDS regardless of filename suffix.
 - texconv.exe (Microsoft DirectXTex, MIT license) is included.
   Source: https://github.com/microsoft/DirectXTex

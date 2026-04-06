@@ -194,8 +194,8 @@ The directory structure relative to `input` is reproduced in `output_dir`.
 ## Changelog
 
 ### v2.1.2
-- **Normal map channel fix (regression fix):** v2.1.1 incorrectly applied channel remapping to ALL uncompressed DDS textures, breaking diffuse, HUD, SKY, and other textures. The pixel-level channel swap is now restricted to normal maps only (filenames ending in `_N` or containing `_N_`). All other textures are exported as-is from VELoader. Reported by [@evgeniy-mapper](https://github.com/evgeniy-mapper).
-  > **Note:** The `_N` suffix heuristic is a temporary solution. Full accuracy requires reading the game's `.MAT` material files (from `CACHE/MATERIALS.DAT`) which contain the exact texture type per asset — including the opacity/type field that identifies normal maps. This will be addressed in a future release.
+- **Normal map channel fix (regression fix):** v2.1.1 incorrectly applied channel remapping to ALL uncompressed DDS textures, breaking diffuse, HUD, SKY, and other textures. The channel swap is now applied only to textures identified as normal maps. Reported by [@evgeniy-mapper](https://github.com/evgeniy-mapper).
+- **MAT-based normal map detection:** The tool now reads `.MAT` material files from the game's `MATERIALS/` directory (and `GrpUnpacker/MATERIALS/` if present) to build an accurate normal map database from `Texture1_BUMP:` entries. Both directories are merged automatically. Falls back to `_N`/`_N_` filename suffix heuristic if no `MATERIALS/` directory is found.
 
 ### v2.1.1
 - **Normal map pixel swap:** In addition to fixing the DDS pixel format masks, the actual pixel bytes are now reordered so that normal maps render correctly in all viewers (not just tools that respect DDS channel masks).
