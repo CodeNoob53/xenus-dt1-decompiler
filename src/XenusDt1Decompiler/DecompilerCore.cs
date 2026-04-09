@@ -1,7 +1,10 @@
 using System;
 using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -362,26 +365,55 @@ namespace XenusDt1Decompiler
                     bool isNormalMap = normalMapSet is not null
                         ? IsNormalMapBySet(filePath, normalMapSet)
                         : IsNormalMapBySuffix(filePath);
+                    if (realExt == ".dds" && isNormalMap)
+                        rawData = FixNormalMapChannels(rawData);
+
                     bool converted = false;
-                    if (texconvPath is not null
-                        && !finalExt.Equals(realExt, StringComparison.OrdinalIgnoreCase))
+                    bool wantsConversion = !finalExt.Equals(realExt, StringComparison.OrdinalIgnoreCase);
+                    bool canSoftwareConvert = wantsConversion && realExt == ".dds";
+                    string? tmpDds = null;
+
+                    if (texconvPath is not null && wantsConversion && realExt == ".dds")
                     {
                         // texconv needs a DDS file on disk; write a temp one then convert
-                        var tmpDds = Path.ChangeExtension(outPath, ".dds");
-                        var ddsData = (realExt == ".dds" && isNormalMap) ? FixNormalMapChannels(rawData) : rawData;
-                        File.WriteAllBytes(tmpDds, ddsData);
+                        tmpDds = Path.ChangeExtension(outPath, ".dds");
+                        File.WriteAllBytes(tmpDds, rawData);
                         converted = TryConvertWithTexconv(texconvPath, tmpDds, outPath, logError);
-                        if (converted && !tmpDds.Equals(outPath, StringComparison.OrdinalIgnoreCase))
+                    }
+
+                    if (!converted && canSoftwareConvert)
+                    {
+                        converted = TryConvertDdsWithoutTexconv(rawData, outPath, logError);
+                        if (converted)
+                            logInfo($"[INFO] Built-in DDS decoder converted {Path.GetFileName(filePath)} -> {Path.GetExtension(outPath)}.");
+                    }
+
+                    if (converted && tmpDds is not null && !tmpDds.Equals(outPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        try
+                        {
                             File.Delete(tmpDds);
+                        }
+                        catch
+                        {
+                        }
                     }
 
                     if (!converted)
                     {
                         // Save with real extension (no conversion needed or conversion failed)
                         var actualPath = Path.ChangeExtension(outPath, realExt);
-                        if (realExt == ".dds" && isNormalMap)
-                            rawData = FixNormalMapChannels(rawData);
-                        File.WriteAllBytes(actualPath, rawData);
+
+                        if (!(tmpDds is not null
+                            && actualPath.Equals(tmpDds, StringComparison.OrdinalIgnoreCase)
+                            && File.Exists(actualPath)))
+                        {
+                            File.WriteAllBytes(actualPath, rawData);
+                        }
+
+                        if (wantsConversion)
+                            logError($"[WARN] Unable to convert {Path.GetFileName(filePath)} to {finalExt} — saved as {realExt}.");
+
                         outPath = actualPath;
                     }
 
@@ -557,6 +589,8 @@ namespace XenusDt1Decompiler
                     CreateNoWindow         = true,
                 };
                 using var proc = Process.Start(psi)!;
+                string stdout = proc.StandardOutput.ReadToEnd();
+                string stderr = proc.StandardError.ReadToEnd();
                 proc.WaitForExit(30_000);
 
                 // texconv writes output as <stem>.<ext> — rename if stem differs from desired
@@ -570,14 +604,445 @@ namespace XenusDt1Decompiler
                     return true;
                 }
 
-                logError($"[WARN] texconv produced no output for {Path.GetFileName(ddsPath)} — saved as .dds");
+                string detail = BuildTexconvFailureDetail(proc.ExitCode, stderr, stdout);
+                logError($"[WARN] texconv produced no output for {Path.GetFileName(ddsPath)}{detail}");
                 return false;
             }
             catch (Exception ex)
             {
-                logError($"[WARN] texconv failed for {Path.GetFileName(ddsPath)}: {ex.Message} — saved as .dds");
+                logError($"[WARN] texconv failed for {Path.GetFileName(ddsPath)}: {ex.Message}");
                 return false;
             }
+        }
+
+        private static bool TryConvertDdsWithoutTexconv(
+            byte[] ddsData,
+            string finalPath,
+            Action<string> logError)
+        {
+            if (!TryDecodeDdsToBgra32(ddsData, out int width, out int height, out byte[] pixels, out string reason))
+            {
+                logError($"[WARN] Built-in DDS fallback could not decode {Path.GetFileName(finalPath)}: {reason}");
+                return false;
+            }
+
+            try
+            {
+                string ext = Path.GetExtension(finalPath).ToLowerInvariant();
+                switch (ext)
+                {
+                    case ".tga":
+                        WriteTga(finalPath, width, height, pixels);
+                        return true;
+                    case ".bmp":
+                    case ".png":
+                    case ".jpg":
+                    case ".jpeg":
+                        SaveBitmap(finalPath, width, height, pixels, ext);
+                        return true;
+                    default:
+                        logError($"[WARN] Built-in DDS fallback does not support {ext} output.");
+                        return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                logError($"[WARN] Built-in DDS fallback failed for {Path.GetFileName(finalPath)}: {ex.Message}");
+                return false;
+            }
+        }
+
+        private static bool TryDecodeDdsToBgra32(
+            byte[] data,
+            out int width,
+            out int height,
+            out byte[] pixels,
+            out string reason)
+        {
+            width = 0;
+            height = 0;
+            pixels = Array.Empty<byte>();
+            reason = string.Empty;
+
+            if (data.Length < 128 || data[0] != 'D' || data[1] != 'D' || data[2] != 'S' || data[3] != ' ')
+            {
+                reason = "input is not a DDS file";
+                return false;
+            }
+
+            height = BitConverter.ToInt32(data, 12);
+            width = BitConverter.ToInt32(data, 16);
+            if (width <= 0 || height <= 0)
+            {
+                reason = "invalid DDS dimensions";
+                return false;
+            }
+
+            uint pfFlags = BitConverter.ToUInt32(data, 80);
+            uint fourCc = BitConverter.ToUInt32(data, 84);
+            int bitsPerPixel = (int)BitConverter.ToUInt32(data, 88);
+            uint rMask = BitConverter.ToUInt32(data, 92);
+            uint gMask = BitConverter.ToUInt32(data, 96);
+            uint bMask = BitConverter.ToUInt32(data, 100);
+            uint aMask = BitConverter.ToUInt32(data, 104);
+
+            const uint DdpfFourCc = 0x4;
+            if ((pfFlags & DdpfFourCc) != 0)
+            {
+                if (fourCc == MakeFourCc("DXT1"))
+                    return TryDecodeDxt1(data, width, height, out pixels, out reason);
+                if (fourCc == 112)
+                    return TryDecodeG16R16F(data, width, height, out pixels, out reason);
+                if (fourCc == 113)
+                    return TryDecodeA16B16G16R16F(data, ref width, ref height, out pixels, out reason);
+
+                reason = $"unsupported DDS FourCC {FourCcToString(fourCc)}";
+                return false;
+            }
+
+            return TryDecodeUncompressedDds(
+                data, width, height, bitsPerPixel, rMask, gMask, bMask, aMask,
+                out pixels, out reason);
+        }
+
+        private static bool TryDecodeDxt1(
+            byte[] data,
+            int width,
+            int height,
+            out byte[] pixels,
+            out string reason)
+        {
+            pixels = new byte[width * height * 4];
+            reason = string.Empty;
+
+            int blockCountX = (width + 3) / 4;
+            int blockCountY = (height + 3) / 4;
+            int requiredBytes = blockCountX * blockCountY * 8;
+            if (data.Length < 128 + requiredBytes)
+            {
+                reason = "DDS payload is truncated for DXT1";
+                pixels = Array.Empty<byte>();
+                return false;
+            }
+
+            int offset = 128;
+            Span<byte> palette = stackalloc byte[16];
+
+            for (int by = 0; by < blockCountY; by++)
+            {
+                for (int bx = 0; bx < blockCountX; bx++)
+                {
+                    ushort color0 = BitConverter.ToUInt16(data, offset);
+                    ushort color1 = BitConverter.ToUInt16(data, offset + 2);
+                    uint indices = BitConverter.ToUInt32(data, offset + 4);
+                    offset += 8;
+
+                    WriteRgb565Color(color0, palette, 0);
+                    WriteRgb565Color(color1, palette, 4);
+
+                    if (color0 > color1)
+                    {
+                        InterpolateColor(palette, 0, palette, 4, palette, 8, 2, 1);
+                        InterpolateColor(palette, 0, palette, 4, palette, 12, 1, 2);
+                    }
+                    else
+                    {
+                        AverageColor(palette, 0, palette, 4, palette, 8);
+                        palette[12] = 0;
+                        palette[13] = 0;
+                        palette[14] = 0;
+                        palette[15] = 0;
+                    }
+
+                    for (int py = 0; py < 4; py++)
+                    {
+                        int y = by * 4 + py;
+                        if (y >= height)
+                            break;
+
+                        for (int px = 0; px < 4; px++)
+                        {
+                            int x = bx * 4 + px;
+                            if (x >= width)
+                                break;
+
+                            int paletteIndex = (int)((indices >> (2 * (py * 4 + px))) & 0x3);
+                            int src = paletteIndex * 4;
+                            int dst = (y * width + x) * 4;
+                            pixels[dst] = palette[src];
+                            pixels[dst + 1] = palette[src + 1];
+                            pixels[dst + 2] = palette[src + 2];
+                            pixels[dst + 3] = palette[src + 3];
+                        }
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        private static bool TryDecodeG16R16F(
+            byte[] data,
+            int width,
+            int height,
+            out byte[] pixels,
+            out string reason)
+        {
+            pixels = new byte[width * height * 4];
+            reason = string.Empty;
+
+            int requiredBytes = width * height * 4;
+            if (data.Length < 128 + requiredBytes)
+            {
+                reason = "DDS payload is truncated for G16R16F";
+                pixels = Array.Empty<byte>();
+                return false;
+            }
+
+            int src = 128;
+            for (int i = 0; i < width * height; i++)
+            {
+                ushort r16 = BitConverter.ToUInt16(data, src);
+                
+                byte x_val = (byte)(r16 & 0xFF);
+                byte y_val = (byte)(r16 >> 8);
+
+                int dst = i * 4;
+                pixels[dst] = x_val;     // Blue
+                pixels[dst + 1] = y_val; // Green
+                pixels[dst + 2] = x_val; // Red
+                pixels[dst + 3] = y_val; // Alpha
+
+                src += 4;
+            }
+
+            return true;
+        }
+
+        private static bool TryDecodeA16B16G16R16F(
+            byte[] data,
+            ref int width,
+            ref int height,
+            out byte[] pixels,
+            out string reason)
+        {
+            reason = string.Empty;
+            pixels = new byte[width * height * 4];
+
+            int src = 128;
+            // Noesis compatibility mode: extracting slice 0 and preserving index precision
+            for (int i = 0; i < width * height; i++)
+            {
+                if (src + 8 > data.Length)
+                    break;
+
+                ushort r16 = BitConverter.ToUInt16(data, src);
+                
+                byte x_val = (byte)(r16 & 0xFF);
+                byte y_val = (byte)(r16 >> 8);
+
+                int dst = i * 4;
+                pixels[dst] = x_val;     // Blue
+                pixels[dst + 1] = y_val; // Green
+                pixels[dst + 2] = x_val; // Red
+                pixels[dst + 3] = y_val; // Alpha matches Noesis direct RGBA casting
+
+                src += 8;
+            }
+
+            return true;
+        }
+
+
+        private static bool TryDecodeUncompressedDds(
+            byte[] data,
+            int width,
+            int height,
+            int bitsPerPixel,
+            uint rMask,
+            uint gMask,
+            uint bMask,
+            uint aMask,
+            out byte[] pixels,
+            out string reason)
+        {
+            pixels = new byte[width * height * 4];
+            reason = string.Empty;
+
+            int bytesPerPixel = bitsPerPixel switch
+            {
+                16 => 2,
+                24 => 3,
+                32 => 4,
+                _ => 0,
+            };
+
+            if (bytesPerPixel == 0)
+            {
+                reason = $"unsupported uncompressed DDS bpp={bitsPerPixel}";
+                pixels = Array.Empty<byte>();
+                return false;
+            }
+
+            int requiredBytes = width * height * bytesPerPixel;
+            if (data.Length < 128 + requiredBytes)
+            {
+                reason = "DDS payload is truncated for uncompressed data";
+                pixels = Array.Empty<byte>();
+                return false;
+            }
+
+            int src = 128;
+            for (int i = 0; i < width * height; i++)
+            {
+                uint value = bytesPerPixel switch
+                {
+                    2 => BitConverter.ToUInt16(data, src),
+                    3 => (uint)(data[src] | (data[src + 1] << 8) | (data[src + 2] << 16)),
+                    _ => BitConverter.ToUInt32(data, src),
+                };
+                src += bytesPerPixel;
+
+                int dst = i * 4;
+                pixels[dst] = ExtractChannel(value, bMask);
+                pixels[dst + 1] = ExtractChannel(value, gMask);
+                pixels[dst + 2] = ExtractChannel(value, rMask);
+                pixels[dst + 3] = aMask == 0 ? (byte)255 : ExtractChannel(value, aMask);
+            }
+
+            return true;
+        }
+
+        private static void SaveBitmap(string finalPath, int width, int height, byte[] pixels, string ext)
+        {
+            using var bitmap = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+            var rect = new Rectangle(0, 0, width, height);
+            var bmpData = bitmap.LockBits(rect, ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+            try
+            {
+                Marshal.Copy(pixels, 0, bmpData.Scan0, pixels.Length);
+            }
+            finally
+            {
+                bitmap.UnlockBits(bmpData);
+            }
+
+            var imageFormat = ext switch
+            {
+                ".bmp" => ImageFormat.Bmp,
+                ".png" => ImageFormat.Png,
+                ".jpg" => ImageFormat.Jpeg,
+                ".jpeg" => ImageFormat.Jpeg,
+                _ => throw new NotSupportedException($"Unsupported bitmap output format: {ext}"),
+            };
+
+            bitmap.Save(finalPath, imageFormat);
+        }
+
+        private static void WriteTga(string finalPath, int width, int height, byte[] pixels)
+        {
+            var header = new byte[18];
+            header[2] = 2;
+            header[12] = (byte)(width & 0xFF);
+            header[13] = (byte)((width >> 8) & 0xFF);
+            header[14] = (byte)(height & 0xFF);
+            header[15] = (byte)((height >> 8) & 0xFF);
+            header[16] = 32;
+            header[17] = 8 | 0x20;
+
+            using var fs = File.Create(finalPath);
+            fs.Write(header, 0, header.Length);
+            fs.Write(pixels, 0, pixels.Length);
+        }
+
+        private static byte ExtractChannel(uint value, uint mask)
+        {
+            if (mask == 0)
+                return 0;
+
+            int shift = BitOperations.TrailingZeroCount(mask);
+            uint maxValue = mask >> shift;
+            uint channel = (value & mask) >> shift;
+            return (byte)((channel * 255 + (maxValue / 2)) / maxValue);
+        }
+
+        private static void WriteRgb565Color(ushort color, Span<byte> dest, int index)
+        {
+            byte r = (byte)((((color >> 11) & 0x1F) * 255 + 15) / 31);
+            byte g = (byte)((((color >> 5) & 0x3F) * 255 + 31) / 63);
+            byte b = (byte)(((color & 0x1F) * 255 + 15) / 31);
+
+            dest[index] = b;
+            dest[index + 1] = g;
+            dest[index + 2] = r;
+            dest[index + 3] = 255;
+        }
+
+        private static void InterpolateColor(
+            Span<byte> c0,
+            int c0Index,
+            Span<byte> c1,
+            int c1Index,
+            Span<byte> dest,
+            int destIndex,
+            int w0,
+            int w1)
+        {
+            int denom = w0 + w1;
+            dest[destIndex] = (byte)((c0[c0Index] * w0 + c1[c1Index] * w1) / denom);
+            dest[destIndex + 1] = (byte)((c0[c0Index + 1] * w0 + c1[c1Index + 1] * w1) / denom);
+            dest[destIndex + 2] = (byte)((c0[c0Index + 2] * w0 + c1[c1Index + 2] * w1) / denom);
+            dest[destIndex + 3] = 255;
+        }
+
+        private static void AverageColor(
+            Span<byte> c0,
+            int c0Index,
+            Span<byte> c1,
+            int c1Index,
+            Span<byte> dest,
+            int destIndex)
+        {
+            dest[destIndex] = (byte)((c0[c0Index] + c1[c1Index]) / 2);
+            dest[destIndex + 1] = (byte)((c0[c0Index + 1] + c1[c1Index + 1]) / 2);
+            dest[destIndex + 2] = (byte)((c0[c0Index + 2] + c1[c1Index + 2]) / 2);
+            dest[destIndex + 3] = 255;
+        }
+
+        private static uint MakeFourCc(string value)
+        {
+            if (value.Length != 4)
+                throw new ArgumentException("FourCC must be exactly 4 characters.", nameof(value));
+
+            return (uint)value[0]
+                | ((uint)value[1] << 8)
+                | ((uint)value[2] << 16)
+                | ((uint)value[3] << 24);
+        }
+
+        private static string FourCcToString(uint value)
+        {
+            Span<char> chars = stackalloc char[4];
+            chars[0] = (char)(value & 0xFF);
+            chars[1] = (char)((value >> 8) & 0xFF);
+            chars[2] = (char)((value >> 16) & 0xFF);
+            chars[3] = (char)((value >> 24) & 0xFF);
+            return new string(chars);
+        }
+
+        private static string BuildTexconvFailureDetail(int exitCode, string stderr, string stdout)
+        {
+            string message = stderr;
+            if (string.IsNullOrWhiteSpace(message))
+                message = stdout;
+
+            message = message.Trim();
+            if (message.Length > 220)
+                message = message.Substring(0, 220).TrimEnd() + "...";
+
+            return string.IsNullOrEmpty(message)
+                ? $" (exit={exitCode})"
+                : $" (exit={exitCode}: {message})";
         }
 
         private static (string basePath, string ext) ParseFileNameAndExtension(string filePath, string? userExt)
