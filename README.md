@@ -3,7 +3,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows-blue.svg)](https://www.microsoft.com/windows)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Build](https://img.shields.io/badge/.NET-8.0-blueviolet.svg)](https://dotnet.microsoft.com/download)
-[![Version](https://img.shields.io/badge/version-2.1.3-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.2.1-orange.svg)](CHANGELOG.md)
 
 **[Українська версія (README_UA.md)](README_UA.md)**
 
@@ -205,7 +205,7 @@ The directory structure relative to `input` is reproduced in `output_dir`.
 
 ## Changelog
 
-### v2.1.3
+### v2.2.1
 - **Stability:** Safer texconv subprocess launch — failure to start now throws a descriptive error instead of a null-reference crash.
 - **UX:** GUI now disables the **Materials** textbox and browse button during processing (previously clickable mid-run).
 - **UX:** Clearer log line stating which normal-map detection mode is active (MATERIALS database vs `_N` suffix heuristic).
@@ -215,6 +215,11 @@ The directory structure relative to `input` is reproduced in `output_dir`.
 - **DDS decoder:** `A16B16G16R16F` decoder now validates payload size upfront instead of silently truncating.
 - **Diagnostics:** Temporary `.dds` cleanup failures are logged (previously swallowed silently).
 - **Build:** `Version` / `AssemblyVersion` / `FileVersion` now defined in `.csproj` for local builds (CI still overrides from the tag).
+
+### v2.2.0
+- **Architecture:** Extracted a reusable `DecompilerCore` layer shared by CLI and GUI — normal map detection, VELoader initialization, and format conversion are now in one place.
+- **Materials folder:** GUI adds an explicit **Materials** field; CLI accepts a 5th `materials_dir` argument. Pass `""` to skip MATERIALS auto-detection.
+- **Docs:** Added dedicated "Normal map channel correction" section explaining MATERIALS/ auto-discovery.
 
 ### v2.1.2
 - **Normal map channel fix (regression fix):** v2.1.1 incorrectly applied channel remapping to ALL uncompressed DDS textures, breaking diffuse, HUD, SKY, and other textures. The channel swap is now applied only to textures identified as normal maps. Reported by [@evgeniy-mapper](https://github.com/evgeniy-mapper).

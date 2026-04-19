@@ -3,7 +3,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows-blue.svg)](https://www.microsoft.com/windows)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Build](https://img.shields.io/badge/.NET-8.0-blueviolet.svg)](https://dotnet.microsoft.com/download)
-[![Version](https://img.shields.io/badge/version-2.1.3-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.2.1-orange.svg)](CHANGELOG.md)
 
 **[English version (README.md)](README.md)**
 
@@ -205,7 +205,7 @@ xenus-dt1-decompiler.exe <вхід> [вихідна_папка] [шлях_до_v
 
 ## Changelog
 
-### v2.1.3
+### v2.2.1
 - **Стабільність:** Безпечніший запуск texconv — помилка старту підпроцесу тепер кидає описову помилку замість null-reference crash.
 - **UX:** GUI коректно блокує поле **Materials** та кнопку огляду під час обробки (раніше були клікабельні).
 - **UX:** У лог додано явне повідомлення про режим визначення normal maps (база MATERIALS чи евристика `_N`).
@@ -215,6 +215,11 @@ xenus-dt1-decompiler.exe <вхід> [вихідна_папка] [шлях_до_v
 - **DDS декодер:** Декодер `A16B16G16R16F` тепер валідує розмір payload на початку замість тихого обрізання.
 - **Діагностика:** Помилки видалення тимчасових `.dds` тепер логуються (раніше тихо ковтались).
 - **Збірка:** `Version` / `AssemblyVersion` / `FileVersion` тепер задані в `.csproj` для локальних збірок (у CI все ще перезаписується з тегу).
+
+### v2.2.0
+- **Архітектура:** Винесено спільний шар `DecompilerCore` для CLI та GUI — визначення normal maps, ініціалізація VELoader і конвертація форматів тепер в одному місці.
+- **Папка Materials:** У GUI з'явилося окреме поле **Materials**; CLI приймає 5-й аргумент `materials_dir`. Передайте `""`, щоб вимкнути автопошук.
+- **Документація:** Додано окремий розділ «Корекція каналів normal map» з поясненням автопошуку `MATERIALS/`.
 
 ### v2.1.2
 - **Фікс регресії в normal maps (v2.1.1):** v2.1.1 помилково застосовував перестановку каналів до ВСІХ нестиснутих DDS-текстур, що ламало дифузні, HUD, SKY та інші текстури. Перестановка тепер застосовується лише до текстур, ідентифікованих як normal maps. Проблему повідомив [@evgeniy-mapper](https://github.com/evgeniy-mapper).
