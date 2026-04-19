@@ -264,11 +264,13 @@ namespace XenusDt1Decompiler
             txtInput.Enabled = enabled;
             txtOutput.Enabled = enabled;
             txtVeloader.Enabled = enabled;
+            txtMaterials.Enabled = enabled;
             cmbFormat.Enabled = enabled;
             btnStart.Enabled = enabled;
             btnBrowseInput.Enabled = enabled;
             btnBrowseOutput.Enabled = enabled;
             btnBrowseVeloader.Enabled = enabled;
+            btnBrowseMaterials.Enabled = enabled;
 
             if (!enabled)
             {

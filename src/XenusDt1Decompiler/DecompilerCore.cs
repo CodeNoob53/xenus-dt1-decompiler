@@ -180,7 +180,9 @@ namespace XenusDt1Decompiler
                 normalMapSet = BuildNormalMapSet(materialsDirs, logInfo);
             }
             if (normalMapSet is null)
-                logInfo("[INFO] MATERIALS directory not found — using _N suffix heuristic for normal map detection.");
+                logInfo("[INFO] Normal map detection: _N suffix heuristic (MATERIALS directory not found).");
+            else
+                logInfo($"[INFO] Normal map detection: MATERIALS database ({normalMapSet.Count} textures).");
 
             int ok = 0;
             int fail = 0;
@@ -394,8 +396,9 @@ namespace XenusDt1Decompiler
                         {
                             File.Delete(tmpDds);
                         }
-                        catch
+                        catch (Exception ex)
                         {
+                            logError($"[WARN] Failed to delete temp file \"{tmpDds}\": {ex.Message}");
                         }
                     }
 
@@ -588,7 +591,8 @@ namespace XenusDt1Decompiler
                     RedirectStandardError  = true,
                     CreateNoWindow         = true,
                 };
-                using var proc = Process.Start(psi)!;
+                using var proc = Process.Start(psi)
+                    ?? throw new InvalidOperationException($"Failed to start texconv: {texconvPath}");
                 string stdout = proc.StandardOutput.ReadToEnd();
                 string stderr = proc.StandardError.ReadToEnd();
                 proc.WaitForExit(30_000);
@@ -829,13 +833,18 @@ namespace XenusDt1Decompiler
             reason = string.Empty;
             pixels = new byte[width * height * 4];
 
+            int requiredBytes = width * height * 8;
+            if (data.Length < 128 + requiredBytes)
+            {
+                reason = "DDS payload is truncated for A16B16G16R16F";
+                pixels = Array.Empty<byte>();
+                return false;
+            }
+
             int src = 128;
             // Noesis compatibility mode: extracting slice 0 and preserving index precision
             for (int i = 0; i < width * height; i++)
             {
-                if (src + 8 > data.Length)
-                    break;
-
                 ushort r16 = BitConverter.ToUInt16(data, src);
                 
                 byte x_val = (byte)(r16 & 0xFF);

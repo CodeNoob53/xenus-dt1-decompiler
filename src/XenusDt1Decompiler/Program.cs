@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Windows.Forms;
 
 namespace XenusDt1Decompiler
@@ -28,6 +29,7 @@ namespace XenusDt1Decompiler
             // We are strictly a GUI app (WinExe), so Windows detached us from the console.
             // Re-attach to the parent console so text output can be seen.
             AttachConsole(ATTACH_PARENT_PROCESS);
+            try { Console.OutputEncoding = Encoding.UTF8; } catch { /* redirected/non-console stdout */ }
             Console.WriteLine(); // Add a new line to separate from the command prompt
 
             if (args.Length < 1 || args[0] == "/?" || args[0] == "--help" || args[0] == "-h")
@@ -37,16 +39,34 @@ namespace XenusDt1Decompiler
             }
 
             var inputPath = Path.GetFullPath(args[0]);
-            var outputRoot = args.Length >= 2 ? Path.GetFullPath(args[1]) : Path.GetDirectoryName(inputPath)!;
-            var veloaderPath = args.Length >= 3
-                ? Path.GetFullPath(args[2])
-                : DecompilerCore.ResolveDefaultVELoader();
+            string outputRoot;
+            if (args.Length >= 2)
+            {
+                outputRoot = Path.GetFullPath(args[1]);
+            }
+            else
+            {
+                var inputDir = Path.GetDirectoryName(inputPath);
+                if (string.IsNullOrEmpty(inputDir))
+                {
+                    Console.Error.WriteLine($"Cannot derive output directory from input path: {inputPath}");
+                    return 6;
+                }
+                outputRoot = inputDir;
+            }
+
+            bool veloaderAutoResolved = args.Length < 3;
+            var veloaderPath = veloaderAutoResolved
+                ? DecompilerCore.ResolveDefaultVELoader()
+                : Path.GetFullPath(args[2]);
             var userExt = args.Length >= 4 ? args[3] : null;
             var materialsPath = args.Length >= 5 && !string.IsNullOrWhiteSpace(args[4]) ? Path.GetFullPath(args[4]) : null;
 
             if (!File.Exists(veloaderPath))
             {
-                Console.Error.WriteLine($"VELoader.dll not found: {veloaderPath}");
+                Console.Error.WriteLine(veloaderAutoResolved
+                    ? $"VELoader.dll auto-resolved to \"{veloaderPath}\" but the file does not exist. Pass an explicit path as the 3rd argument."
+                    : $"VELoader.dll not found: {veloaderPath}");
                 return 3;
             }
 

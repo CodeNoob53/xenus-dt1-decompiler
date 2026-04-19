@@ -3,7 +3,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows-blue.svg)](https://www.microsoft.com/windows)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Build](https://img.shields.io/badge/.NET-8.0-blueviolet.svg)](https://dotnet.microsoft.com/download)
-[![Version](https://img.shields.io/badge/version-2.1.2-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.1.3-orange.svg)](CHANGELOG.md)
 
 **[English version (README.md)](README.md)**
 
@@ -155,7 +155,7 @@ git push origin v2.1.0
 Для автоматизації або використання з `.bat`-скриптів:
 
 ```text
-xenus-dt1-decompiler.exe <вхід> [вихідна_папка] [шлях_до_veloader] [формат]
+xenus-dt1-decompiler.exe <вхід> [вихідна_папка] [шлях_до_veloader] [формат] [папка_materials]
 ```
 
 | Аргумент | За замовчуванням | Опис |
@@ -164,6 +164,7 @@ xenus-dt1-decompiler.exe <вхід> [вихідна_папка] [шлях_до_v
 | `вихідна_папка` | поряд із входом | Папка для збереження декодованих файлів |
 | `шлях_до_veloader` | автопошук | Явний шлях до `VELoader.dll` |
 | `формат` | auto (за magic bytes) | Примусовий формат виводу: `dds`, `tga`, `bmp`, `png`, `jpg` |
+| `папка_materials` | автовизначення | Шлях до теки `MATERIALS/` гри (для визначення normal maps). Передайте `""`, щоб вимкнути автопошук |
 
 Якщо `шлях_до_veloader` не вказано, утиліта шукає `VELoader.dll` у поточному каталозі → `.\GrpUnpacker\` → `..\GrpUnpacker\` → `..\`.
 
@@ -198,10 +199,22 @@ xenus-dt1-decompiler.exe <вхід> [вихідна_папка] [шлях_до_v
 | 3 | `VELoader.dll` не знайдено |
 | 4 | У вхідній папці не знайдено DT1/DT2 файлів |
 | 5 | Вхідний шлях не існує |
+| 6 | Не вдалося визначити вихідну папку зі вхідного шляху |
 
 ---
 
 ## Changelog
+
+### v2.1.3
+- **Стабільність:** Безпечніший запуск texconv — помилка старту підпроцесу тепер кидає описову помилку замість null-reference crash.
+- **UX:** GUI коректно блокує поле **Materials** та кнопку огляду під час обробки (раніше були клікабельні).
+- **UX:** У лог додано явне повідомлення про режим визначення normal maps (база MATERIALS чи евристика `_N`).
+- **CLI:** Якщо автовизначений шлях до `VELoader.dll` не існує — повідомлення тепер просить явно передати шлях 3-м аргументом.
+- **CLI:** Закрито крайовий випадок, коли вхід у корені диска падав при визначенні вихідної папки (новий exit code `6`).
+- **CLI:** Вивід у консоль примусово в UTF-8 — кириличні імена файлів більше не псуються.
+- **DDS декодер:** Декодер `A16B16G16R16F` тепер валідує розмір payload на початку замість тихого обрізання.
+- **Діагностика:** Помилки видалення тимчасових `.dds` тепер логуються (раніше тихо ковтались).
+- **Збірка:** `Version` / `AssemblyVersion` / `FileVersion` тепер задані в `.csproj` для локальних збірок (у CI все ще перезаписується з тегу).
 
 ### v2.1.2
 - **Фікс регресії в normal maps (v2.1.1):** v2.1.1 помилково застосовував перестановку каналів до ВСІХ нестиснутих DDS-текстур, що ламало дифузні, HUD, SKY та інші текстури. Перестановка тепер застосовується лише до текстур, ідентифікованих як normal maps. Проблему повідомив [@evgeniy-mapper](https://github.com/evgeniy-mapper).

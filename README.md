@@ -3,7 +3,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows-blue.svg)](https://www.microsoft.com/windows)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Build](https://img.shields.io/badge/.NET-8.0-blueviolet.svg)](https://dotnet.microsoft.com/download)
-[![Version](https://img.shields.io/badge/version-2.1.2-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.1.3-orange.svg)](CHANGELOG.md)
 
 **[Українська версія (README_UA.md)](README_UA.md)**
 
@@ -155,7 +155,7 @@ Run `xenus-dt1-decompiler.exe` by double-clicking it (without arguments). A wind
 For automation or batch-script usage:
 
 ```text
-xenus-dt1-decompiler.exe <input> [output_dir] [veloader_path] [format]
+xenus-dt1-decompiler.exe <input> [output_dir] [veloader_path] [format] [materials_dir]
 ```
 
 | Argument | Default | Description |
@@ -164,6 +164,7 @@ xenus-dt1-decompiler.exe <input> [output_dir] [veloader_path] [format]
 | `output_dir` | same as input | Directory to write decoded files into |
 | `veloader_path` | auto-search | Explicit path to `VELoader.dll` |
 | `format` | auto (from magic bytes) | Force output format: `dds`, `tga`, `bmp`, `png`, `jpg` |
+| `materials_dir` | auto-detected | Path to the game's `MATERIALS/` folder (normal map detection). Pass `""` to skip auto-detection |
 
 If `veloader_path` is omitted, the tool searches for `VELoader.dll` in: current directory → `.\GrpUnpacker\` → `..\GrpUnpacker\` → `..\`.
 
@@ -198,10 +199,22 @@ The directory structure relative to `input` is reproduced in `output_dir`.
 | 3 | `VELoader.dll` not found |
 | 4 | No DT1/DT2 files found in the input directory |
 | 5 | Input path does not exist |
+| 6 | Cannot derive output directory from input path |
 
 ---
 
 ## Changelog
+
+### v2.1.3
+- **Stability:** Safer texconv subprocess launch — failure to start now throws a descriptive error instead of a null-reference crash.
+- **UX:** GUI now disables the **Materials** textbox and browse button during processing (previously clickable mid-run).
+- **UX:** Clearer log line stating which normal-map detection mode is active (MATERIALS database vs `_N` suffix heuristic).
+- **CLI:** Auto-resolved `VELoader.dll` path that does not exist now reports an actionable error asking for an explicit 3rd argument.
+- **CLI:** Guarded edge case where an input path at a drive root produced a crash deriving the output directory (now exits with code `6`).
+- **CLI:** Console output forced to UTF-8 so Cyrillic filenames no longer corrupt in the log.
+- **DDS decoder:** `A16B16G16R16F` decoder now validates payload size upfront instead of silently truncating.
+- **Diagnostics:** Temporary `.dds` cleanup failures are logged (previously swallowed silently).
+- **Build:** `Version` / `AssemblyVersion` / `FileVersion` now defined in `.csproj` for local builds (CI still overrides from the tag).
 
 ### v2.1.2
 - **Normal map channel fix (regression fix):** v2.1.1 incorrectly applied channel remapping to ALL uncompressed DDS textures, breaking diffuse, HUD, SKY, and other textures. The channel swap is now applied only to textures identified as normal maps. Reported by [@evgeniy-mapper](https://github.com/evgeniy-mapper).
