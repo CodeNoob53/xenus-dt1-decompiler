@@ -55,26 +55,17 @@ namespace XenusDt1Decompiler
                 outputRoot = inputDir;
             }
 
-            bool veloaderAutoResolved = args.Length < 3;
-            var veloaderPath = veloaderAutoResolved
-                ? DecompilerCore.ResolveDefaultVELoader()
-                : Path.GetFullPath(args[2]);
-            var userExt = args.Length >= 4 ? args[3] : null;
-            var materialsPath = args.Length >= 5 && !string.IsNullOrWhiteSpace(args[4]) ? Path.GetFullPath(args[4]) : null;
-
-            if (!File.Exists(veloaderPath))
-            {
-                Console.Error.WriteLine(veloaderAutoResolved
-                    ? $"VELoader.dll auto-resolved to \"{veloaderPath}\" but the file does not exist. Pass an explicit path as the 3rd argument."
-                    : $"VELoader.dll not found: {veloaderPath}");
-                return 3;
-            }
+            // Older versions took VELoader.dll as the 3rd argument; it is no longer needed, skip it if present.
+            int optArg = args.Length >= 3 && args[2].EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ? 3 : 2;
+            var userExt = args.Length > optArg && !string.IsNullOrWhiteSpace(args[optArg]) ? args[optArg] : null;
+            // Older versions also took a MATERIALS folder after the format; normal maps are now
+            // detected from pixel data, so any further arguments are ignored.
 
             if (File.Exists(inputPath))
             {
                 Directory.CreateDirectory(outputRoot);
                 string? texconvPath = string.IsNullOrEmpty(userExt) ? null : DecompilerCore.ResolveTexconv();
-                bool ok = DecompilerCore.DecodeOneFile(inputPath, outputRoot, veloaderPath, null, userExt, texconvPath,
+                bool ok = DecompilerCore.DecodeOneFile(inputPath, outputRoot, null, userExt, texconvPath,
                     msg => Console.WriteLine(msg),
                     err => Console.Error.WriteLine(err));
                 return ok ? 0 : 1;
@@ -82,7 +73,7 @@ namespace XenusDt1Decompiler
 
             if (Directory.Exists(inputPath))
             {
-                var res = DecompilerCore.DecodeDirectory(inputPath, outputRoot, veloaderPath, userExt, materialsPath,
+                var res = DecompilerCore.DecodeDirectory(inputPath, outputRoot, userExt,
                     msg => Console.WriteLine(msg),
                     err => Console.Error.WriteLine(err));
                 
@@ -101,11 +92,8 @@ namespace XenusDt1Decompiler
         private static void PrintUsage()
         {
             Console.WriteLine("Usage:");
-            Console.WriteLine($"  {AppName} <input_file.dt1|dt2> [output_dir] [veloader.dll] [format] [materials_dir]");
-            Console.WriteLine($"  {AppName} <input_dir>           [output_dir] [veloader.dll] [format] [materials_dir]");
-            Console.WriteLine();
-            Console.WriteLine("  materials_dir  Path to the game MATERIALS/ folder (for normal map detection).");
-            Console.WriteLine("                 Auto-detected if omitted. Pass \"\" to skip auto-detection.");
+            Console.WriteLine($"  {AppName} <input_file.dt1> [output_dir] [format]");
+            Console.WriteLine($"  {AppName} <input_dir>      [output_dir] [format]");
             Console.WriteLine();
             Console.WriteLine("Run without arguments to start the Graphical User Interface (GUI).");
         }

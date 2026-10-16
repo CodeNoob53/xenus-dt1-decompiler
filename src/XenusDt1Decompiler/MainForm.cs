@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Concurrent;
 using System.Drawing;
 using System.IO;
+using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -10,21 +12,21 @@ namespace XenusDt1Decompiler
     {
         private TextBox txtInput = null!;
         private TextBox txtOutput = null!;
-        private TextBox txtVeloader = null!;
-        private TextBox txtMaterials = null!;
         private ComboBox cmbFormat = null!;
         private Button btnStart = null!;
         private RichTextBox rtbLog = null!;
         private Label lblStatus = null!;
         private Button btnBrowseInput = null!;
         private Button btnBrowseOutput = null!;
-        private Button btnBrowseVeloader = null!;
-        private Button btnBrowseMaterials = null!;
+        private System.Windows.Forms.Timer logTimer = null!;
+
+        // Log messages are queued here and flushed to the RichTextBox by a UI timer.
+        // This avoids thousands of cross-thread Invoke calls on large directories.
+        private readonly ConcurrentQueue<(string Message, bool IsError)> logQueue = new();
 
         public MainForm()
         {
             InitializeComponent();
-            CheckDefaultVeloader();
             txtOutput.Text = Path.Combine(Directory.GetCurrentDirectory(), "out_tex");
         }
 
@@ -44,7 +46,7 @@ namespace XenusDt1Decompiler
             var panelTop = new TableLayoutPanel
             {
                 ColumnCount = 3,
-                RowCount = 5,
+                RowCount = 3,
                 Dock = DockStyle.Top,
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
@@ -54,7 +56,7 @@ namespace XenusDt1Decompiler
             panelTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             panelTop.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 80));
 
-            for (int i = 0; i < 5; i++)
+            for (int i = 0; i < 3; i++)
             {
                 panelTop.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             }
@@ -75,30 +77,13 @@ namespace XenusDt1Decompiler
             btnBrowseOutput.Click += BtnBrowseOutput_Click;
             panelTop.Controls.Add(btnBrowseOutput, 2, 1);
 
-            // Row 3: VELoader
-            panelTop.Controls.Add(new Label { Text = "VELoader.dll:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 2);
-            txtVeloader = new TextBox { Dock = DockStyle.Fill, Margin = new Padding(0, 5, 5, 0) };
-            panelTop.Controls.Add(txtVeloader, 1, 2);
-            btnBrowseVeloader = new Button { Text = "Browse...", Dock = DockStyle.Fill, Margin = new Padding(0, 3, 0, 3) };
-            btnBrowseVeloader.Click += BtnBrowseVeloader_Click;
-            panelTop.Controls.Add(btnBrowseVeloader, 2, 2);
-
-            // Row 4: Materials (optional)
-            panelTop.Controls.Add(new Label { Text = "Materials:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 3);
-            txtMaterials = new TextBox { Dock = DockStyle.Fill, Margin = new Padding(0, 5, 5, 0) };
-            txtMaterials.PlaceholderText = "optional — auto-detected from game folder";
-            panelTop.Controls.Add(txtMaterials, 1, 3);
-            btnBrowseMaterials = new Button { Text = "Browse...", Dock = DockStyle.Fill, Margin = new Padding(0, 3, 0, 3) };
-            btnBrowseMaterials.Click += BtnBrowseMaterials_Click;
-            panelTop.Controls.Add(btnBrowseMaterials, 2, 3);
-
-            // Row 5: Format
-            panelTop.Controls.Add(new Label { Text = "Output Format:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 4);
+            // Row 3: Format
+            panelTop.Controls.Add(new Label { Text = "Output Format:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 2);
 
             cmbFormat = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150, Margin = new Padding(0, 5, 5, 0) };
             cmbFormat.Items.AddRange(new object[] { "Auto (from filename)", "dds", "tga", "bmp", "png", "jpg" });
             cmbFormat.SelectedIndex = 0;
-            panelTop.Controls.Add(cmbFormat, 1, 4);
+            panelTop.Controls.Add(cmbFormat, 1, 2);
 
             this.Controls.Add(panelTop);
 
@@ -126,7 +111,7 @@ namespace XenusDt1Decompiler
                 Font = new Font("Consolas", 9F),
                 BorderStyle = BorderStyle.None,
                 WordWrap = true,
-                ScrollBars = RichTextBoxScrollBars.None
+                ScrollBars = RichTextBoxScrollBars.Vertical
             };
             pnlHost.Controls.Add(rtbLog);
 
@@ -134,45 +119,82 @@ namespace XenusDt1Decompiler
             var panelMiddle = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10) };
             panelMiddle.Controls.Add(pnlHost);
             this.Controls.Add(panelMiddle);
-            
+
             // Critical fix: make sure the Fill panel is evaluated last during Docking
             // by bringing it to the front of the Z-order.
             panelMiddle.BringToFront();
+
+            // Drag & drop: drop a folder (or a DT1/DT2 file) onto the window to set the input path
+            void EnableDrop(Control c)
+            {
+                c.AllowDrop = true;
+                c.DragEnter += Drop_DragEnter;
+                c.DragDrop += Drop_DragDrop;
+            }
+            EnableDrop(this);
+            EnableDrop(panelTop);
+            EnableDrop(txtInput);
+            EnableDrop(rtbLog);
+
+            logTimer = new System.Windows.Forms.Timer { Interval = 100 };
+            logTimer.Tick += (_, _) => FlushLog();
+            logTimer.Start();
         }
 
-        private void CheckDefaultVeloader()
-        {
-            string defaultPath = DecompilerCore.ResolveDefaultVELoader();
-            if (File.Exists(defaultPath))
-            {
-                txtVeloader.Text = defaultPath;
-            }
-        }
+        private void LogInfo(string message) => logQueue.Enqueue((message, false));
 
-        private void LogInfo(string message)
+        private void LogError(string message) => logQueue.Enqueue((message, true));
+
+        // Drains the queue and appends messages in batches, grouping
+        // consecutive same-colored messages into a single AppendText call.
+        private void FlushLog()
         {
-            if (rtbLog.InvokeRequired)
+            if (logQueue.IsEmpty) return;
+
+            var sb = new StringBuilder();
+            bool currentIsError = false;
+            bool first = true;
+
+            void Append()
             {
-                rtbLog.Invoke(new Action<string>(LogInfo), message);
-                return;
+                if (sb.Length == 0) return;
+                rtbLog.SelectionStart = rtbLog.TextLength;
+                rtbLog.SelectionLength = 0;
+                rtbLog.SelectionColor = currentIsError ? Color.LightCoral : rtbLog.ForeColor;
+                rtbLog.AppendText(sb.ToString());
+                rtbLog.SelectionColor = rtbLog.ForeColor;
+                sb.Clear();
             }
-            rtbLog.AppendText(message + Environment.NewLine);
+
+            while (logQueue.TryDequeue(out var entry))
+            {
+                if (!first && entry.IsError != currentIsError)
+                    Append();
+                currentIsError = entry.IsError;
+                first = false;
+                sb.AppendLine(entry.Message);
+            }
+            Append();
             rtbLog.ScrollToCaret();
         }
 
-        private void LogError(string message)
+        private void Drop_DragEnter(object? sender, DragEventArgs e)
         {
-            if (rtbLog.InvokeRequired)
-            {
-                rtbLog.Invoke(new Action<string>(LogError), message);
+            if (e.Data?.GetDataPresent(DataFormats.FileDrop) == true)
+                e.Effect = DragDropEffects.Copy;
+        }
+
+        private void Drop_DragDrop(object? sender, DragEventArgs e)
+        {
+            if (!btnStart.Enabled) return; // ignore drops while working
+            if (e.Data?.GetData(DataFormats.FileDrop) is not string[] paths || paths.Length == 0)
                 return;
-            }
-            rtbLog.SelectionStart = rtbLog.TextLength;
-            rtbLog.SelectionLength = 0;
-            rtbLog.SelectionColor = Color.LightCoral;
-            rtbLog.AppendText(message + Environment.NewLine);
-            rtbLog.SelectionColor = rtbLog.ForeColor;
-            rtbLog.ScrollToCaret();
+
+            var path = paths[0];
+            if (Directory.Exists(path))
+                txtInput.Text = path;
+            else if (File.Exists(path) && DecompilerCore.IsDt1OrDt2(path))
+                txtInput.Text = Path.GetDirectoryName(path) ?? path;
         }
 
         private void BtnBrowseInput_Click(object? sender, EventArgs e)
@@ -193,29 +215,10 @@ namespace XenusDt1Decompiler
             }
         }
 
-        private void BtnBrowseVeloader_Click(object? sender, EventArgs e)
-        {
-            using var ofd = new OpenFileDialog { Filter = "DLL Files (*.dll)|*.dll|All Files (*.*)|*.*", Title = "Select VELoader.dll" };
-            if (ofd.ShowDialog() == DialogResult.OK)
-            {
-                txtVeloader.Text = ofd.FileName;
-            }
-        }
-
-        private void BtnBrowseMaterials_Click(object? sender, EventArgs e)
-        {
-            using var fbd = new FolderBrowserDialog { Description = "Select game MATERIALS folder (for accurate normal map detection)" };
-            if (fbd.ShowDialog() == DialogResult.OK)
-            {
-                txtMaterials.Text = fbd.SelectedPath;
-            }
-        }
-
         private async void BtnStart_Click(object? sender, EventArgs e)
         {
             string input = txtInput.Text.Trim();
             string output = txtOutput.Text.Trim();
-            string veloader = txtVeloader.Text.Trim();
             string ext = cmbFormat.SelectedIndex > 0 ? cmbFormat.SelectedItem!.ToString()!.Replace(".", "") : "";
 
             if (string.IsNullOrEmpty(input) || !Directory.Exists(input))
@@ -230,52 +233,49 @@ namespace XenusDt1Decompiler
                 txtOutput.Text = output;
             }
 
-            if (string.IsNullOrEmpty(veloader) || !File.Exists(veloader))
-            {
-                MessageBox.Show("VELoader.dll not found. Please provide a valid path.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
-            string materials = txtMaterials.Text.Trim();
-
             SetUIState(false);
             rtbLog.Clear();
+            while (logQueue.TryDequeue(out _)) { } // drop leftovers from a previous run
             LogInfo("--- Starting Decompilation ---");
             LogInfo($"Input: {input}");
             LogInfo($"Output: {output}");
             LogInfo($"Format: {(string.IsNullOrEmpty(ext) ? "Auto" : ext)}");
             LogInfo("");
 
-            var progress = new Progress<string>(msg => lblStatus.Text = msg);
+            int lastProgressTick = 0;
+            var res = await Task.Run(() =>
+                DecompilerCore.DecodeDirectory(input, output, ext, LogInfo, LogError,
+                    (done, total) =>
+                    {
+                        // Throttle UI updates to ~10/s; always show the final count
+                        int now = Environment.TickCount;
+                        if (done != total && now - lastProgressTick < 100) return;
+                        lastProgressTick = now;
+                        BeginInvoke(new Action(() => lblStatus.Text = $"Processing... {done}/{total}"));
+                    }));
 
-            await Task.Run(() =>
-            {
-                var res = DecompilerCore.DecodeDirectory(input, output, veloader, ext, materials, LogInfo, LogError);
-                LogInfo("");
-                LogInfo($"--- Finished. OK: {res.Ok}, FAIL: {res.Fail} ---");
-                ((IProgress<string>)progress).Report($"Done. OK: {res.Ok}, FAIL: {res.Fail}");
-            });
-
+            LogInfo("");
+            LogInfo($"--- Finished. OK: {res.Ok}, FAIL: {res.Fail} ---");
+            FlushLog();
             SetUIState(true);
+            lblStatus.Text = $"Done. OK: {res.Ok}, FAIL: {res.Fail}";
+            lblStatus.ForeColor = res.Fail > 0 ? Color.Firebrick : Color.Green;
         }
 
         private void SetUIState(bool enabled)
         {
             txtInput.Enabled = enabled;
             txtOutput.Enabled = enabled;
-            txtVeloader.Enabled = enabled;
-            txtMaterials.Enabled = enabled;
             cmbFormat.Enabled = enabled;
             btnStart.Enabled = enabled;
             btnBrowseInput.Enabled = enabled;
             btnBrowseOutput.Enabled = enabled;
-            btnBrowseVeloader.Enabled = enabled;
-            btnBrowseMaterials.Enabled = enabled;
 
             if (!enabled)
             {
                 btnStart.Text = "WORKING...";
                 lblStatus.Text = "Processing files...";
+                lblStatus.ForeColor = Color.Gray;
             }
             else
             {
