@@ -18,7 +18,7 @@ dotnet build .\src\XenusDt1Decompiler\XenusDt1Decompiler.csproj -c Release
 Run:
 
 ```powershell
-dotnet run --project .\src\XenusDt1Decompiler\XenusDt1Decompiler.csproj -- <input> [output_dir] [veloader_path]
+dotnet run --project .\src\XenusDt1Decompiler\XenusDt1Decompiler.csproj -- <input> [output_dir] [format]
 ```
 
 ## Pull requests

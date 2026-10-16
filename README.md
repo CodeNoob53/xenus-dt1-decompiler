@@ -3,7 +3,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows-blue.svg)](https://www.microsoft.com/windows)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Build](https://img.shields.io/badge/.NET-8.0-blueviolet.svg)](https://dotnet.microsoft.com/download)
-[![Version](https://img.shields.io/badge/version-2.2.1-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-3.0.0-orange.svg)](CHANGELOG.md)
 
 **[Українська версія (README_UA.md)](README_UA.md)**
 
@@ -11,17 +11,11 @@ A tool for batch-decoding the compressed texture cache of **Xenus 2: White Gold*
 
 ---
 
-## Why this approach
+## How it works
 
-The game engine (**Vital Engine 3**) uses a modified zlib with proprietary preset dictionaries. Reimplementing the decompressor from scratch is impractical because the dictionary is embedded deep inside the engine. Instead, the tool loads the original `VELoader.dll` from the game and calls its exported API via Windows Native Interop:
+Starting from v3.0.0 the tool **no longer needs `VELoader.dll`**. The `Unload` routine of the engine's `VELoader.dll` was reverse-engineered and reimplemented in managed code: the "proprietary" compression is a standard **zlib 1.2.2** stream whose first 16 bytes are XOR-ed with `0x6E`. Decompression uses .NET's built-in `ZLibStream`.
 
-| Export | Purpose |
-|---|---|
-| `GetCLVersion` | Version/compatibility check |
-| `GetUnloadSize` | Query exact uncompressed size |
-| `Unload` | Decompress the payload into a buffer |
-
-This way the decompression is bit-perfect and requires zero knowledge of the dictionary internals.
+The output was verified byte-for-byte against the original `VELoader.dll` on 3857 files, and all 21 921 DT1/DT2 files of the game decode with matching size and zlib Adler-32 checksum.
 
 ---
 
@@ -41,33 +35,72 @@ Each `.DT1` or `.DT2` file is a single compressed asset. The 8-byte header is fo
 
 ```text
 Offset  Size  Description
-0       3     Uncompressed size, little-endian 24-bit
-3       1     Flags (0x50 in all observed files)
-4       3     Compressed payload size, little-endian 24-bit
-7       1     Flags (0x08 in all observed files)
-8       N     Compressed payload (VE3 zlib, starts with 0x16 0x30)
+0       4     bits 0..27  = uncompressed size
+              bits 28..31 = compression method
+4       4     bits 0..26  = packed size, including this 8-byte header
+              bits 27..31 = key index (method 7 only)
+8       N     Payload
 ```
+
+| Method | Payload |
+|---|---|
+| 0 | Stored, no compression |
+| 1..3 | Another codec, not used by any game file (unsupported) |
+| 4..6 | First `min(16, N)` bytes XOR `0x6E`, then a standard zlib stream (`0x16 0x30` → `0x78 0x5E`) |
+| 7 | Same as 4..6; if the payload is ≥ 256 bytes it is additionally encrypted with a key table (unsupported, only `resource.DT1` uses it) |
+
+All texture cache files use method 5.
+
+A texture can have up to three cache files:
+
+| File | Contents |
+|---|---|
+| `.DT1` | Full resolution (DXT or uncompressed 32-bit). This is what the tool exports. |
+| `.DT2` | 64×64 low-detail DXT copy |
+| `.DT3` | Full-resolution DXT5 copy, present only for normal maps |
+
+`.DT2` and `.DT3` are lower-quality duplicates of `.DT1`, so they are skipped.
 
 > **Note:** This tool handles `.DT1` / `.DT2` files only. `CE#$` archives (e.g. `CACHE/*.DAT`) have a different structure — the format is fully documented and `CE#$` support may be integrated into a future version of this tool once finalized.
 
 ---
 
+## SPECIAL Look-Up Tables
+
+`TEXTURES/SPECIAL` contains two lookup tables that are not images:
+
+| Texture | DDS format | Size | Contents |
+|---|---|---|---|
+| `DXT1CTRL` | `D3DFMT_G16R16F` (FourCC `112`) | 256×256, 2 channels | Both channels hold the 16-bit code `x + 256·y` |
+| `R5G6R5TABLE` | `D3DFMT_A16B16G16R16F` (FourCC `113`) | 32×64×32 **volume**, 4 channels | 16-bit codes built from the texel's x/y/z (R5G6B5-style bit fields) |
+
+Although the formats are half-float, the values are **16-bit integer bit patterns**. Read as floats they are mostly denormals and NaNs, so any float conversion (e.g. `texconv`) destroys them.
+
+- **Auto / `dds`:** the table is saved as the original DDS, unchanged. This is the file to use for repacking.
+- **`tga` / `png` / `bmp`:** the table is packed losslessly into 8-bit RGBA, and `texconv` is not used:
+  - each pair of 16-bit channels `(c0, c1)` becomes one pixel: `R = lo(c0)`, `G = hi(c0)`, `B = lo(c1)`, `A = hi(c1)`;
+  - with 4 channels, the `(c2, c3)` pair is placed in a second block to the right;
+  - volume slices are stacked top to bottom.
+
+  `DXT1CTRL` becomes a 256×256 image. `R5G6R5TABLE` becomes 64×2048 (2 channel pairs × 32 slices). The top-left block (slice 0, channels 0–1) looks the same as in Noesis. `jpg` is lossy and should not be used for these tables.
+
+---
+
 ## Normal map channel correction
 
-VELoader stores normal map textures with a non-standard channel layout. The tool remaps pixel bytes to standard RGBA so normal maps render correctly in all viewers.
+The engine stores normal map textures with a non-standard channel layout. The tool remaps pixel bytes to standard RGBA so normal maps render correctly in all viewers.
 
-Normal maps are identified by scanning `.MAT` material files for `Texture1_BUMP:` entries. The tool automatically searches for the game's `MATERIALS/` directory — no manual configuration needed.
+In the cache, an uncompressed normal map is stored as `A8R8G8B8` with the vector swizzled across the bytes: `B=Y`, `G=Z`, `R=0`, `A=X`. The tool remaps it to `R=X`, `G=Y`, `B=Z`, `A=255`.
 
-The game root is resolved from the paths you provide (input folder and VELoader location). If `MATERIALS/` is not found, the tool falls back to detecting normal maps by `_N` / `_N_` filename suffix.
+Normal maps are identified from the pixel data itself, with no file names or `.MAT` files involved: the R byte is `0` in every pixel and Z averages ≥ 128. In the Xenus 2 cache this matches all 818 normal maps, which are exactly the textures that also have a `.DT3`, and none of the other uncompressed textures (sky, menus, diffuse).
 
 ---
 
 ## Requirements
 
-- **OS:** Windows (x86 or x64 host)
+- **OS:** Windows (x86 or x64)
 - **Runtime:** [.NET SDK 8.0+](https://dotnet.microsoft.com/download/dotnet/8.0)
-- **Architecture:** must publish as **win-x86** — `VELoader.dll` is a 32-bit DLL
-- **VELoader.dll:** `VELoader.dll` often fails to initialize with pirated copies of the game (error `LoadLibraryEx 1114`). Use the `VELoader.dll` from the **Steam release**, **Vital Engine SDK**, or the **GrpUnpacker** utility.
+- No game DLLs are required.
 
 ---
 
@@ -109,13 +142,25 @@ Self-contained single-exe publish (recommended for distribution):
 dotnet publish .\src\XenusDt1Decompiler\XenusDt1Decompiler.csproj -c Release -r win-x86 --self-contained true
 ```
 
-The executable ends up in `bin\Release\net8.0-windows\win-x86\publish\`.
+The executable ends up in `bin\Release\net8.0-windows\win-x86\publish\`. Any other runtime (e.g. `win-x64`) works as well.
 
 ---
 
 ## Automatic release (GitHub Actions)
 
-The workflow at `.github/workflows/release.yml` triggers on a version tag push. It builds the project, downloads the latest `texconv.exe` from the [DirectXTex releases](https://github.com/microsoft/DirectXTex/releases), and creates a GitHub Release with a `win-x86.zip` archive. The zip extracts into a single named folder:
+Releases are published by `.github/workflows/release.yml`. To release a new version:
+
+1. Bump `<Version>` in `src/XenusDt1Decompiler/XenusDt1Decompiler.csproj` (for example `3.0.1`).
+2. Add a `### v3.0.1` section to the changelog in `README.md`. It becomes the release notes.
+3. Push to `main`.
+
+On every push to `main`, the workflow checks whether the tag `v<Version>` already exists. If it does not, the workflow builds the project, downloads the latest `texconv.exe` from the [DirectXTex releases](https://github.com/microsoft/DirectXTex/releases), creates the tag and a GitHub Release with a `win-x86.zip` archive, and mirrors the release to [xenus-dt1-decompiler-release-repo](https://github.com/CodeNoob53/xenus-dt1-decompiler-release-repo). Pushes that do not change the version publish nothing.
+
+Pushing a `v*` tag manually, or running the workflow by hand from the Actions tab, also publishes a release.
+
+Mirroring needs a repository secret `RELEASE_REPO_TOKEN`: a fine-grained personal access token limited to the release repo, with **Contents: Read and write** permission. Without it, the release is created only in this repository.
+
+The zip extracts into a single named folder:
 
 ```text
 xenus-dt1-decompiler-vX.X.X/
@@ -124,11 +169,6 @@ xenus-dt1-decompiler-vX.X.X/
 ├── app.ico
 ├── run_decompiler.bat
 └── README.txt
-```
-
-```powershell
-git tag v2.1.0
-git push origin v2.1.0
 ```
 
 ---
@@ -143,9 +183,8 @@ Run `xenus-dt1-decompiler.exe` by double-clicking it (without arguments). A wind
 
 1. Select the input directory containing `.DT1` / `.DT2` files.
 2. Select the output directory.
-3. Optionally select `VELoader.dll` (auto-detected if not specified).
-4. Choose the output format (`Auto`, `dds`, `tga`, `bmp`, `png`, `jpg`).
-5. Click **START DECOMPILE** and watch the progress in the log window.
+3. Choose the output format (`Auto`, `dds`, `tga`, `bmp`, `png`, `jpg`).
+4. Click **START DECOMPILE** and watch the progress in the log window.
 
 **Auto format** — detects the real format from magic bytes and saves with the correct extension.
 **Explicit format** — converts the decompressed DDS to the chosen format via [texconv](https://github.com/microsoft/DirectXTex/wiki/Texconv) (bundled in the release archive).
@@ -155,18 +194,15 @@ Run `xenus-dt1-decompiler.exe` by double-clicking it (without arguments). A wind
 For automation or batch-script usage:
 
 ```text
-xenus-dt1-decompiler.exe <input> [output_dir] [veloader_path] [format] [materials_dir]
+xenus-dt1-decompiler.exe <input> [output_dir] [format]
 ```
 
 | Argument | Default | Description |
 |---|---|---|
 | `input` | — | Path to a `.DT1`/`.DT2` file **or** a directory to scan recursively |
 | `output_dir` | same as input | Directory to write decoded files into |
-| `veloader_path` | auto-search | Explicit path to `VELoader.dll` |
 | `format` | auto (from magic bytes) | Force output format: `dds`, `tga`, `bmp`, `png`, `jpg` |
-| `materials_dir` | auto-detected | Path to the game's `MATERIALS/` folder (normal map detection). Pass `""` to skip auto-detection |
-
-If `veloader_path` is omitted, the tool searches for `VELoader.dll` in: current directory → `.\GrpUnpacker\` → `..\GrpUnpacker\` → `..\`.
+For backward compatibility, a `*.dll` path in the third position (the old `veloader_path` argument) and a trailing `materials_dir` argument are accepted and ignored.
 
 #### Examples (CLI)
 
@@ -175,14 +211,14 @@ If `veloader_path` is omitted, the tool searches for `VELoader.dll` in: current 
 .\xenus-dt1-decompiler.exe "C:\Games\Xenus 2\CACHE\TEXTURES\GRASS_TGA.DT1" ".\out_tex"
 ```
 
-**Batch-decode all textures, auto-detect VELoader:**
+**Batch-decode all textures:**
 ```powershell
 .\xenus-dt1-decompiler.exe "C:\Games\Xenus 2\CACHE\TEXTURES" ".\out_tex"
 ```
 
 **Batch-decode and convert to TGA:**
 ```powershell
-.\xenus-dt1-decompiler.exe "C:\Games\Xenus 2\CACHE\TEXTURES" ".\out_tex" "C:\Games\Xenus 2\VELoader.dll" tga
+.\xenus-dt1-decompiler.exe "C:\Games\Xenus 2\CACHE\TEXTURES" ".\out_tex" tga
 ```
 
 The directory structure relative to `input` is reproduced in `output_dir`.
@@ -196,7 +232,6 @@ The directory structure relative to `input` is reproduced in `output_dir`.
 | 0 | All files decoded successfully |
 | 1 | One or more files failed |
 | 2 | Invalid arguments (or help display) |
-| 3 | `VELoader.dll` not found |
 | 4 | No DT1/DT2 files found in the input directory |
 | 5 | Input path does not exist |
 | 6 | Cannot derive output directory from input path |
@@ -204,6 +239,13 @@ The directory structure relative to `input` is reproduced in `output_dir`.
 ---
 
 ## Changelog
+
+### v3.0.0
+- **No more `VELoader.dll`:** The DT1/DT2 decompressor was reverse-engineered and reimplemented in managed code (zlib with the first 16 bytes XOR `0x6E`). The tool no longer loads any game DLL, works with any copy of the game, and is no longer limited to 32-bit (x86) builds. Output is byte-identical to the VELoader-based versions.
+- **Normal maps (completes [#1](https://github.com/CodeNoob53/xenus-dt1-decompiler-release-repo/issues/1)):** Normal maps are now detected from pixel data instead of `.MAT` files. The MATERIALS-based detection missed 32 of the 818 normal maps in the Xenus 2 cache (for example `SAND_2_N`, `CAT_KORNI_N`, `HOB_GALKA_N`, `BUMPMAP/WATER`), and those were still exported with swapped channels.
+- **SPECIAL lookup tables:** `DXT1CTRL` and `R5G6R5TABLE` are now exported losslessly to `tga`/`png`/`bmp`. The v2.2.0 decoder kept only the first channel of each table and only slice 0 of the 32-slice `R5G6R5TABLE` volume (about 3% of its data). All channels and slices are now packed into an atlas, and the old image is its top-left block. `texconv` is no longer used for these tables.
+- **GUI:** The `VELoader.dll` and `Materials` fields were removed.
+- **CLI:** New argument order `<input> [output_dir] [format]`. Old command lines (a `.dll` path in the third position, or a trailing `materials_dir`) still work; those arguments are ignored. Exit code 3 is no longer used.
 
 ### v2.2.1
 - **Stability:** Safer texconv subprocess launch — failure to start now throws a descriptive error instead of a null-reference crash.
@@ -220,6 +262,7 @@ The directory structure relative to `input` is reproduced in `output_dir`.
 - **Architecture:** Extracted a reusable `DecompilerCore` layer shared by CLI and GUI — normal map detection, VELoader initialization, and format conversion are now in one place.
 - **Materials folder:** GUI adds an explicit **Materials** field; CLI accepts a 5th `materials_dir` argument. Pass `""` to skip MATERIALS auto-detection.
 - **Docs:** Added dedicated "Normal map channel correction" section explaining MATERIALS/ auto-discovery.
+- **Native Support for SPECIAL LUT Textures:** Added dedicated fallback bitwise decoders for the legacy DirectX 9 FourCC `112` and `113` mathematical index tables used by the Vital Engine (`DXT1CTRL` and `R5G6R5TABLE`). The tool intercepts these files to bypass `texconv` failures, preserving the coordinate indexes losslessly into standard `.tga` files by perfectly mimicking the Noesis viewer extraction logic (bit-shifting to RGBA and masking the Y dimension into the Alpha channel). Reported by [@evgeniy-mapper](https://github.com/evgeniy-mapper).
 
 ### v2.1.2
 - **Normal map channel fix (regression fix):** v2.1.1 incorrectly applied channel remapping to ALL uncompressed DDS textures, breaking diffuse, HUD, SKY, and other textures. The channel swap is now applied only to textures identified as normal maps. Reported by [@evgeniy-mapper](https://github.com/evgeniy-mapper).
