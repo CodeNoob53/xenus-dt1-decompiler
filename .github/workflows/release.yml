@@ -92,9 +92,9 @@ jobs:
           $pg.FileVersion = "$ver.0"
           $xml.Save($path)
 
-      - name: Publish win-x86
+      - name: Publish win-x64 (self-contained single file)
         if: steps.vars.outputs.publish == 'true'
-        run: dotnet publish ${{ env.CSPROJ }} -c Release -r win-x86 --self-contained false -o .\publish
+        run: dotnet publish ${{ env.CSPROJ }} -c Release -r win-x64 -o .\publish
 
       - name: Download texconv
         if: steps.vars.outputs.publish == 'true'
@@ -115,7 +115,7 @@ jobs:
         run: |
           $tag = "${{ steps.vars.outputs.tag }}"
           $dirName = "xenus-dt1-decompiler-$tag"
-          $artifact = "$dirName-win-x86.zip"
+          $artifact = "$dirName-win-x64.zip"
 
           Copy-Item ".\run_decompiler.bat" -Destination ".\publish\"
           Copy-Item ".\dist\README.txt" -Destination ".\publish\"

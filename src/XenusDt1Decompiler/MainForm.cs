@@ -39,9 +39,9 @@ namespace XenusDt1Decompiler
             this.StartPosition = FormStartPosition.CenterScreen;
             this.MinimumSize = new Size(500, 400);
             this.Font = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point);
-            var icoPath = Path.Combine(AppContext.BaseDirectory, "app.ico");
-            if (File.Exists(icoPath))
-                this.Icon = new Icon(icoPath);
+            // The icon is embedded in the exe (ApplicationIcon); single-file builds have no app.ico next to it.
+            if (Environment.ProcessPath is { } exePath)
+                this.Icon = Icon.ExtractAssociatedIcon(exePath);
 
             var panelTop = new TableLayoutPanel
             {
