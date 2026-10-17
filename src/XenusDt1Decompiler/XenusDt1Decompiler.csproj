@@ -7,13 +7,16 @@
     <Nullable>enable</Nullable>
     <AssemblyName>xenus-dt1-decompiler</AssemblyName>
     <!-- Bumping this on main publishes a new GitHub release (see .github/workflows/release.yml) -->
-    <Version>3.0.0</Version>
+    <Version>3.0.1</Version>
     <ApplicationIcon>..\..\dist\app.ico</ApplicationIcon>
   </PropertyGroup>
 
-  <ItemGroup>
-    <Content Include="..\..\dist\app.ico" Link="app.ico">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
+  <!-- `dotnet publish -r win-x64` produces one self-contained exe that needs no .NET runtime installed -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
 </Project>
