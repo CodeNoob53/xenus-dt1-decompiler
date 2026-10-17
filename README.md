@@ -11,11 +11,23 @@ A tool for batch-decoding the compressed texture cache of **Xenus 2: White Gold*
 
 ---
 
+## Supported games
+
+| Game | Status |
+|---|---|
+| Xenus 2: White Gold | ✅ Tested on the whole cache (3829 textures) |
+| Boiling Point: Road to Hell | ✅ Tested on the whole cache (2603 textures), since v3.0.2 |
+| The Precursors | ⚠️ Not tested since v3.0 ([#4](https://github.com/CodeNoob53/xenus-dt1-decompiler/issues/4)) |
+
+Up to v2.x the decoding was done by the game's own `VELoader.dll`, so the tool worked with every game whose DLL it was given, The Precursors included. Since v3.0 it uses its own decoder, rebuilt from `VELoader.dll` (see below). On Xenus 2 and Boiling Point its output is byte-identical to the DLL's; The Precursors runs on the same engine but hasn't been checked yet.
+
+---
+
 ## How it works
 
-Starting from v3.0.0 the tool **no longer needs `VELoader.dll`**. The `Unload` routine of the engine's `VELoader.dll` was reverse-engineered and reimplemented in managed code: the "proprietary" compression is a standard **zlib 1.2.2** stream whose first 16 bytes are XOR-ed with `0x6E`. Decompression uses .NET's built-in `ZLibStream`.
+Starting from v3.0.0 the tool **no longer needs `VELoader.dll`**. The `Unload` routine of the engine's `VELoader.dll` was reverse-engineered and reimplemented in managed code. The "proprietary" compression turned out to be two standard algorithms with the first 16 bytes of the stream XOR-ed with `0x6E`: **zlib 1.2.2** (Xenus 2, decoded with .NET's `ZLibStream`) and **UCL NRV2E** (Boiling Point, decoded by a built-in decompressor). See [DT1 / DT2 file format](#dt1--dt2-file-format).
 
-The output was verified byte-for-byte against the original `VELoader.dll` on 3857 files, and all 21 921 DT1/DT2 files of the game decode with matching size and zlib Adler-32 checksum.
+The output is byte-identical to the original `VELoader.dll` on 3857 Xenus 2 files and all 2603 Boiling Point files, and all 21 921 DT1/DT2 files of Xenus 2 decode with a matching size and zlib Adler-32 checksum.
 
 ---
 
