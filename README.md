@@ -205,7 +205,7 @@ Run `xenus-dt1-decompiler.exe` without arguments.
 3. **Format**: **Auto** saves each texture in the format it had before the engine cached it (`_TGA` → `.tga`), which is what the game expects when you put a texture back. **DDS** keeps the texture exactly as stored in the cache. The other formats are converted with [texconv](https://github.com/microsoft/DirectXTex/wiki/Texconv) (bundled in the release archive). Hover over an option for details; the line under the switch describes the selected one.
 4. Click **Start**. The progress bar and the log show each file. **Cancel** stops the run, and **Open output folder** opens the result.
 
-The log shows one line per file, warnings in yellow and failures in red, and ends with a summary that lists the failed files. The input, output and format are remembered between runs (in `%AppData%\xenus-dt1-decompiler\settings.json`). The window follows the Windows light or dark mode.
+The log shows one line per file, warnings in yellow and failures in red, and ends with a summary that lists the failed files. The input, output and format are remembered between runs (in `%AppData%\xenus-dt1-decompiler\settings.json`). There are two themes, **Mono** (monochrome) and **White Gold** (warm stone with a gold accent); pick one with the round swatches at the right of the Format row. Both follow the Windows light or dark mode.
 
 ### CLI Mode
 
@@ -265,7 +265,8 @@ The directory structure relative to `input` is reproduced in `output_dir`.
   - the output defaults to `out_tex` next to the exe, and the paths and format are remembered between runs;
   - **Browse…** opens at the current path;
   - the format dropdown is replaced by a switch (Auto · DDS · TGA · PNG · BMP · JPG) with a tooltip on each option and a description of the selected one;
-  - the window follows the Windows light or dark mode, with its own buttons, fields and progress bar so text stays readable in every state (stock disabled buttons drew near-black text on the dark background).
+  - two themes, Mono and White Gold, picked with round swatches next to the format switch; both follow the Windows light or dark mode and use the app's own buttons, fields and progress bar, so text stays readable in every state (stock disabled buttons drew near-black text on the dark background);
+  - restrained motion: the switch's selection slides to the chosen format, the counter and the progress line move smoothly, and the line shows a running segment while files are collected; all of it is off when Windows animation effects are off.
 - **Quieter log** (GUI and CLI): one line per file instead of three, colour-coded warnings and failures in the GUI, and a final summary with the elapsed time and the list of failed files.
 - **Lookup tables:** exporting `DXT1CTRL` / `R5G6R5TABLE` to an 8-bit format logs that the atlas is for viewing only (a warning for `jpg`).
 - **Faster batch processing:** files are decoded and converted in parallel on all CPU cores. On the full Xenus 2 cache (3829 files, 12 threads), Auto mode drops from ~199 s to ~60 s and `dds` mode from ~25 s to ~6 s; Boiling Point in `dds` mode from ~6.5 s to ~2 s. Output is byte-identical to v3.0.x, except for the fix below.

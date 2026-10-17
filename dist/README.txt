@@ -37,7 +37,8 @@ Double-click xenus-dt1-decompiler.exe (no arguments).
 4. Click Start. Cancel stops the run; Open output folder shows the result.
 
 Paths and format are remembered between runs. The window follows the
-Windows light/dark mode.
+Windows light/dark mode. Two themes, Mono and White Gold: switch them
+with the round swatches at the right of the Format row.
 
 
 USAGE - Command Line
