@@ -7,7 +7,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>xenus-dt1-decompiler</AssemblyName>
     <!-- Bumping this on main publishes a new GitHub release (see .github/workflows/release.yml) -->
-    <Version>3.0.2</Version>
+    <Version>3.1.0</Version>
     <ApplicationIcon>..\..\dist\app.ico</ApplicationIcon>
   </PropertyGroup>
 
