@@ -25,8 +25,8 @@ namespace XenusDt1Decompiler
 
         private static readonly string DefaultOutput = Path.Combine(AppContext.BaseDirectory, "out_tex");
 
-        private readonly Theme theme = Theme.Load();
         private readonly AppSettings settings = AppSettings.Load();
+        private Theme theme;
 
         private TextBox txtInput = null!;
         private TextBox txtOutput = null!;
@@ -39,7 +39,15 @@ namespace XenusDt1Decompiler
         private ThinProgressBar progress = null!;
         private Label lblStatus = null!;
         private RichTextBox rtbLog = null!;
-        private System.Windows.Forms.Timer logTimer = null!;
+        private System.Windows.Forms.Timer? logTimer;
+        private readonly List<PaletteSwatch> swatches = new();
+
+        // Every log line shown so far, so the log can be redrawn in new colours after a palette change.
+        private readonly List<string> logHistory = new();
+
+        // Status line colour role, kept across palette changes.
+        private enum StatusKind { Muted, Success, Warning, Error }
+        private StatusKind statusKind = StatusKind.Muted;
 
         private CancellationTokenSource? cts;
 
@@ -48,6 +56,7 @@ namespace XenusDt1Decompiler
 
         public MainForm()
         {
+            theme = Theme.Load(settings.Palette);
             InitializeComponent();
 
             txtInput.Text = settings.InputPath ?? "";
@@ -61,6 +70,7 @@ namespace XenusDt1Decompiler
 
         private void ShowEmptyLogHint()
         {
+            rtbLog.SelectionStart = rtbLog.TextLength;
             rtbLog.SelectionColor = theme.Muted;
             rtbLog.AppendText(
                 "Choose the game's CACHE\\TEXTURES folder (or a single .DT1 file) and press Start.\n" +
@@ -69,18 +79,22 @@ namespace XenusDt1Decompiler
 
         private void InitializeComponent()
         {
-            var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-            Text = "Xenus DT1 Decompiler" + (ver is null ? "" : $" v{ver.Major}.{ver.Minor}.{ver.Build}");
-            Size = new Size(820, 600);
-            MinimumSize = new Size(620, 460);
-            StartPosition = FormStartPosition.CenterScreen;
+            bool firstTime = logTimer is null; // later calls rebuild the controls for another palette
+            if (firstTime)
+            {
+                var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+                Text = "Xenus DT1 Decompiler" + (ver is null ? "" : $" v{ver.Major}.{ver.Minor}.{ver.Build}");
+                Size = new Size(820, 600);
+                MinimumSize = new Size(620, 460);
+                StartPosition = FormStartPosition.CenterScreen;
+                // The icon is embedded in the exe (ApplicationIcon); single-file builds have no app.ico next to it.
+                if (Environment.ProcessPath is { } exePath)
+                    Icon = Icon.ExtractAssociatedIcon(exePath);
+            }
             Font = theme.UiFont;
             BackColor = theme.Back;
             ForeColor = theme.Text;
             Padding = new Padding(16, 14, 16, 14);
-            // The icon is embedded in the exe (ApplicationIcon); single-file builds have no app.ico next to it.
-            if (Environment.ProcessPath is { } exePath)
-                Icon = Icon.ExtractAssociatedIcon(exePath);
 
             // Top: input, output, format
             var top = new TableLayoutPanel
@@ -109,7 +123,7 @@ namespace XenusDt1Decompiler
             formatSwitch = new SegmentedControl { Anchor = AnchorStyles.Left, Margin = new Padding(0, 10, 0, 0), AccessibleName = "Format" };
             formatSwitch.SetOptions(Formats);
             formatSwitch.SelectedIndexChanged += (_, _) => lblFormatHint.Text = formatSwitch.SelectedOption.Description;
-            AddRow(top, "Format", formatSwitch, null, span: 2);
+            AddRow(top, "Format", formatSwitch, BuildThemePicker());
 
             lblFormatHint = new Label { AutoSize = true, ForeColor = theme.Muted, Margin = new Padding(2, 6, 0, 2) };
             top.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -166,16 +180,101 @@ namespace XenusDt1Decompiler
             Controls.Add(top);
 
             // Drag & drop a folder or a single .DT1 file anywhere onto the window.
-            foreach (var c in new Control[] { this, top, middle, logFrame, rtbLog, txtInput })
+            var dropTargets = new List<Control> { top, middle, logFrame, rtbLog, txtInput };
+            if (firstTime) dropTargets.Add(this);
+            foreach (var c in dropTargets)
             {
                 c.AllowDrop = true;
                 c.DragEnter += Drop_DragEnter;
                 c.DragDrop += Drop_DragDrop;
             }
 
-            logTimer = new System.Windows.Forms.Timer { Interval = 100 };
-            logTimer.Tick += (_, _) => FlushLog();
-            logTimer.Start();
+            if (firstTime)
+            {
+                logTimer = new System.Windows.Forms.Timer { Interval = 100 };
+                logTimer.Tick += (_, _) => FlushLog();
+                logTimer.Start();
+            }
+        }
+
+        // Round swatches (Mono, White Gold) at the right end of the format row.
+        private Control BuildThemePicker()
+        {
+            var picker = new FlowLayoutPanel
+            {
+                AutoSize = true,
+                WrapContents = false,
+                Anchor = AnchorStyles.Right,
+                Margin = new Padding(0, 10, 0, 0),
+                BackColor = theme.Back,
+                AccessibleName = "Theme",
+            };
+            var tip = new ToolTip();
+            swatches.Clear();
+            foreach (var palette in Theme.PaletteList)
+            {
+                var swatch = new PaletteSwatch(palette.Key, palette.Name) { Checked = palette.Key == theme.PaletteKey };
+                tip.SetToolTip(swatch, $"Theme: {palette.Name}");
+                swatch.CheckedChanged += (_, _) => { if (swatch.Checked) SwitchPalette(swatch.PaletteKey); };
+                swatches.Add(swatch);
+                picker.Controls.Add(swatch);
+            }
+            return picker;
+        }
+
+        // Rebuilds the window's controls in another palette, keeping the inputs, the status and the log.
+        private void SwitchPalette(string key)
+        {
+            if (key == theme.PaletteKey || cts is not null) return;
+            BeginInvoke(() =>
+            {
+                string input = txtInput.Text, output = txtOutput.Text, status = lblStatus.Text;
+                int format = formatSwitch.SelectedIndex;
+                float shown = progress.Value;
+                int max = progress.Maximum;
+                var lines = logHistory.ToList();
+
+                SuspendLayout();
+                theme = Theme.Load(key);
+                foreach (var c in Controls.Cast<Control>().ToList())
+                    c.Dispose();
+                Controls.Clear();
+                InitializeComponent();
+                txtInput.Text = input;
+                txtOutput.Text = output;
+                formatSwitch.SelectedIndex = format;
+                lblFormatHint.Text = formatSwitch.SelectedOption.Description;
+                progress.Maximum = max;
+                progress.Value = shown;
+                SetStatus(status, statusKind);
+                UpdateOpenOutputButton();
+                ResumeLayout();
+
+                theme.ApplyChrome(this);
+                theme.UseDarkScrollbars(rtbLog);
+                logHistory.Clear();
+                if (lines.Count == 0)
+                    ShowEmptyLogHint();
+                foreach (var line in lines)
+                    logQueue.Enqueue(line);
+                FlushLog();
+
+                SaveSettings();
+                swatches.First(sw => sw.PaletteKey == key).Focus();
+            });
+        }
+
+        private void SetStatus(string text, StatusKind kind)
+        {
+            statusKind = kind;
+            lblStatus.Text = text;
+            lblStatus.ForeColor = kind switch
+            {
+                StatusKind.Success => theme.Success,
+                StatusKind.Warning => theme.Warning,
+                StatusKind.Error => theme.Error,
+                _ => theme.Muted,
+            };
         }
 
         private TextBox NewTextBox(string placeholder) => new()
@@ -187,20 +286,22 @@ namespace XenusDt1Decompiler
         };
 
         private FieldFrame Field(TextBox box) =>
-            new(box, new Padding(10, 8, 10, 4), theme.Surface) { Height = 32, Dock = DockStyle.Fill, Margin = new Padding(0, 4, 8, 4) };
+            new(box, new Padding(14, 8, 14, 4), theme.Surface) { Height = 32, Dock = DockStyle.Fill, Margin = new Padding(0, 4, 8, 4) };
 
         private void AddRow(TableLayoutPanel panel, string label, Control field, Control? button, int span = 1)
         {
             int row = panel.RowCount++;
             panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            panel.Controls.Add(new Label
+            // Font set explicitly so PreferredHeight below is measured with the font the label will use.
+            var caption = new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left, ForeColor = theme.Muted, Font = theme.UiFont };
+            int top = 4;
+            if (field is SegmentedControl s)
             {
-                Text = label,
-                AutoSize = true,
-                Anchor = AnchorStyles.Left,
-                ForeColor = theme.Muted,
-                Margin = new Padding(0, field is SegmentedControl ? 10 : 4, 14, 4),
-            }, 0, row);
+                // Centre the caption on the switch.
+                top = s.Margin.Top + (s.Height - caption.PreferredHeight) / 2;
+            }
+            caption.Margin = new Padding(0, top, 14, 4);
+            panel.Controls.Add(caption, 0, row);
             panel.Controls.Add(field, 1, row);
             panel.SetColumnSpan(field, span);
             if (button is not null)
@@ -226,6 +327,7 @@ namespace XenusDt1Decompiler
             settings.InputPath = txtInput.Text.Trim();
             settings.OutputPath = txtOutput.Text.Trim();
             settings.Format = formatSwitch.SelectedOption.Value;
+            settings.Palette = theme.PaletteKey;
             settings.Save();
         }
 
@@ -267,6 +369,7 @@ namespace XenusDt1Decompiler
                     current = color;
                 }
                 sb.AppendLine(line);
+                logHistory.Add(line);
             }
             Append();
             rtbLog.ScrollToCaret();
@@ -359,6 +462,7 @@ namespace XenusDt1Decompiler
             cts = new CancellationTokenSource();
             SetRunning(true);
             rtbLog.Clear();
+            logHistory.Clear();
             while (logQueue.TryDequeue(out _)) { } // drop leftovers from a previous run
             Log($"Input:  {input}");
             Log($"Output: {output}");
@@ -394,26 +498,41 @@ namespace XenusDt1Decompiler
             FlushLog();
             SetRunning(false);
 
-            lblStatus.Text = cancelled
-                ? $"Cancelled: {res.Ok} OK, {res.Fail} failed"
-                : $"Done: {res.Ok} OK, {res.Fail} failed";
-            lblStatus.ForeColor = res.Fail > 0 ? theme.Error : cancelled ? theme.Warning : theme.Success;
+            SetStatus(
+                cancelled ? $"Cancelled: {res.Ok} OK, {res.Fail} failed" : $"Done: {res.Ok} OK, {res.Fail} failed",
+                res.Fail > 0 ? StatusKind.Error : cancelled ? StatusKind.Warning : StatusKind.Success);
         }
 
-        private int lastProgressTick;
+        // Progress reported by worker threads; the UI timer below eases the shown count towards it.
+        private int targetDone, targetTotal;
+        private float shownDone;
+        private System.Windows.Forms.Timer? progressTimer;
 
-        // Called from worker threads; throttled to ~10 UI updates per second, the last one always shown.
+        // Called from worker threads: only records the numbers, no UI calls.
         private void ReportProgress(int done, int total)
         {
-            int now = Environment.TickCount;
-            if (done != total && now - Volatile.Read(ref lastProgressTick) < 100) return;
-            Volatile.Write(ref lastProgressTick, now);
-            BeginInvoke(() =>
+            Volatile.Write(ref targetTotal, total);
+            int current;
+            do
             {
-                progress.Maximum = total;
-                progress.Value = Math.Max(progress.Value, done);
-                lblStatus.Text = $"Processing… {progress.Value} / {total}";
-            });
+                current = Volatile.Read(ref targetDone);
+                if (done <= current) return;
+            } while (Interlocked.CompareExchange(ref targetDone, done, current) != current);
+        }
+
+        private void AnimateProgress()
+        {
+            int total = Volatile.Read(ref targetTotal);
+            if (total == 0) return; // still collecting files: the bar shows the running segment
+            int target = Volatile.Read(ref targetDone);
+
+            progress.Indeterminate = false;
+            progress.Maximum = total;
+            shownDone = Motion.Enabled && target - shownDone > 0.5f
+                ? shownDone + (target - shownDone) * 0.25f
+                : target;
+            progress.Value = shownDone;
+            lblStatus.Text = $"Processing… {(int)MathF.Round(shownDone):N0} / {total:N0}";
         }
 
         private void SetRunning(bool running)
@@ -421,18 +540,39 @@ namespace XenusDt1Decompiler
             txtInput.ReadOnly = running;
             txtOutput.ReadOnly = running;
             formatSwitch.Enabled = !running;
+            foreach (var sw in swatches) sw.Enabled = !running;
             btnBrowseInput.Enabled = !running;
             btnBrowseOutput.Enabled = !running;
             btnStart.Enabled = true;
             btnStart.Text = running ? "Cancel" : "Start";
             UpdateOpenOutputButton();
 
+            progressTimer ??= new System.Windows.Forms.Timer { Interval = 16 };
             if (running)
             {
+                targetDone = targetTotal = 0;
+                shownDone = 0;
                 progress.Value = 0;
-                lblStatus.Text = "Processing…";
-                lblStatus.ForeColor = theme.Muted;
+                progress.Indeterminate = true;
+                progress.Busy = true;
+                SetStatus("Collecting files…", StatusKind.Muted);
+                progressTimer.Tick -= ProgressTimer_Tick;
+                progressTimer.Tick += ProgressTimer_Tick;
+                progressTimer.Start();
+            }
+            else
+            {
+                progressTimer.Stop();
+                progress.Busy = false;
+                progress.Indeterminate = false;
+                if (targetTotal > 0)
+                {
+                    progress.Maximum = targetTotal;
+                    progress.Value = shownDone = targetDone;
+                }
             }
         }
+
+        private void ProgressTimer_Tick(object? sender, EventArgs e) => AnimateProgress();
     }
 }

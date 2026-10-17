@@ -9,6 +9,7 @@ namespace XenusDt1Decompiler
         public string? InputPath { get; set; }
         public string? OutputPath { get; set; }
         public string? Format { get; set; }
+        public string? Palette { get; set; }
 
         private static string FilePath =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
