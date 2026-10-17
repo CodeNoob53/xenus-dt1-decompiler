@@ -259,6 +259,11 @@ The directory structure relative to `input` is reproduced in `output_dir`.
 
 ## Changelog
 
+### v3.1.0
+- **Faster batch processing:** files are decoded and converted in parallel on all CPU cores. On the full Xenus 2 cache (3829 files, 12 threads), Auto mode drops from ~199 s to ~60 s and `dds` mode from ~25 s to ~6 s; Boiling Point in `dds` mode from ~6.5 s to ~2 s. Output is byte-identical to v3.0.x, except for the fix below.
+- **No more lost textures when names clash:** `SKY00_BMP.DT1` and `SKY00_TGA.DT1` are different textures, but in `dds` or a forced format both used to be written to `SKY00.dds`, so one of them was silently overwritten (10 sky textures in Xenus 2). Textures whose output names would clash now keep their format suffix: `SKY00_BMP.dds`, `SKY00_TGA.dds`.
+- **Safer temporary files:** texconv now works in its own temporary folder, so a temporary `NAME.dds` can no longer overwrite or delete a real `NAME.dds` in the output folder.
+
 ### v3.0.2
 - **Boiling Point works again:** Its whole texture cache uses compression method 2, which v3.0.0 and v3.0.1 did not support. All 2603 Boiling Point textures failed. Methods 1–3 are now decoded: a UCL NRV2E decompressor reversed from `VELoader.dll`. The output is byte-identical to the VELoader-based v2.2 build on all 2603 files. Xenus 2 output is unchanged.
 
