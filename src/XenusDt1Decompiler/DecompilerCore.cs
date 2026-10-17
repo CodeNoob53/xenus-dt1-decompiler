@@ -83,7 +83,7 @@ namespace XenusDt1Decompiler
 
         // UCL NRV2E decompressor with an 8-bit bit buffer (ucl_nrv2e_decompress_safe_8),
         // as used by VELoader.dll for methods 1..3.
-        private static byte[] DecompressNrv2e(byte[] src, int outLen)
+        internal static byte[] DecompressNrv2e(byte[] src, int outLen)
         {
             var dst = new byte[outLen];
             int ilen = 0, olen = 0;
@@ -354,7 +354,7 @@ namespace XenusDt1Decompiler
         // the R slot is 0 in every pixel and Z (byte1) averages >= 128, because the normals
         // point out of the surface. In the Xenus 2 cache this matches all 818 normal maps
         // (exactly the textures that also have a .DT3) and none of the other 40 uncompressed textures.
-        private static bool IsSwizzledNormalMap(byte[] data)
+        internal static bool IsSwizzledNormalMap(byte[] data)
         {
             if (!IsUncompressedArgb32Dds(data)) return false;
 
@@ -380,7 +380,7 @@ namespace XenusDt1Decompiler
 
         // Remaps a swizzled normal map (see IsSwizzledNormalMap) to standard RGBA:
         //   R = X (old byte3), G = Y (old byte0), B = Z (old byte1), A = 255
-        private static byte[] FixNormalMapChannels(byte[] data)
+        internal static byte[] FixNormalMapChannels(byte[] data)
         {
             var result = (byte[])data.Clone();
 
@@ -661,7 +661,7 @@ namespace XenusDt1Decompiler
         private const uint D3dFmtG16R16F = 112;
         private const uint D3dFmtA16B16G16R16F = 113;
 
-        private static bool IsRaw16Lut(byte[] data)
+        internal static bool IsRaw16Lut(byte[] data)
         {
             if (data.Length < 128 || data[0] != 'D' || data[1] != 'D' || data[2] != 'S' || data[3] != ' ')
                 return false;
@@ -680,7 +680,7 @@ namespace XenusDt1Decompiler
         // Output size: (width * channels/2) x (height * depth).
         // For DXT1CTRL, and for slice 0 / (c0,c1) of R5G6R5TABLE, this is the same image as
         // Noesis shows (c0 == c1 in both tables).
-        private static bool TryDecodeRaw16Lut(
+        internal static bool TryDecodeRaw16Lut(
             byte[] data,
             int channels,
             ref int width,
