@@ -11,6 +11,10 @@
     <ApplicationIcon>..\..\dist\app.ico</ApplicationIcon>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="XenusDt1Decompiler.Tests" />
+  </ItemGroup>
+
   <!-- `dotnet publish -r win-x64` produces one self-contained exe that needs no .NET runtime installed -->
   <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
     <SelfContained>true</SelfContained>
