@@ -68,6 +68,20 @@ public class DecodeDirectoryTests : IDisposable
     }
 
     [Fact]
+    public void Summary_CountsAllFiles_WithoutProgressCallback()
+    {
+        for (int i = 0; i < 20; i++)
+            Input($"TEX{i:D2}_TGA.DT1", Dds((byte)i));
+
+        var log = new List<string>();
+        DecompilerCore.DecodeDirectory(Path.Combine(_dir.FullName, "in"), Path.Combine(_dir.FullName, "out"), "dds",
+            m => { lock (log) log.Add(m); }, _ => { });
+
+        var summary = Assert.Single(log, l => l.StartsWith("Done in"));
+        Assert.EndsWith("20 OK, 0 failed.", summary);
+    }
+
+    [Fact]
     public void DecodeDirectory_StopsWhenCancelled()
     {
         for (int i = 0; i < 50; i++)

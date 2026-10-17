@@ -215,6 +215,8 @@ namespace XenusDt1Decompiler
             int ok = 0;
             int fail = 0;
             int done = 0;
+            var failed = new System.Collections.Concurrent.ConcurrentQueue<string>();
+            var stopwatch = Stopwatch.StartNew();
             var options = new ParallelOptions
             {
                 MaxDegreeOfParallelism = Environment.ProcessorCount,
@@ -232,12 +234,22 @@ namespace XenusDt1Decompiler
                     }
                     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                     {
-                        logError($"[FAIL] {file} : {ex.Message}");
+                        logError($"[FAIL] {Shown(file, inputPath)} : {ex.Message}");
                         success = false;
                     }
 
-                    Interlocked.Increment(ref success ? ref ok : ref fail);
-                    onProgress?.Invoke(Interlocked.Increment(ref done), files.Count);
+                    if (success)
+                    {
+                        Interlocked.Increment(ref ok);
+                    }
+                    else
+                    {
+                        Interlocked.Increment(ref fail);
+                        failed.Enqueue(Shown(file, inputPath));
+                    }
+                    // Increment outside ?.Invoke: without a progress callback the argument would not be evaluated.
+                    int doneNow = Interlocked.Increment(ref done);
+                    onProgress?.Invoke(doneNow, files.Count);
                 });
             }
             catch (OperationCanceledException)
@@ -245,9 +257,26 @@ namespace XenusDt1Decompiler
                 logError($"[WARN] Cancelled after {done} of {files.Count} files.");
             }
 
-            logInfo($"Done. OK={ok}, FAIL={fail}");
+            logInfo("");
+            int skipped = files.Count - done;
+            logInfo($"Done in {stopwatch.Elapsed.TotalSeconds:0.0} s: {ok} OK, {fail} failed" +
+                    (skipped > 0 ? $", {skipped} not processed." : "."));
+            if (!failed.IsEmpty)
+            {
+                const int MaxListed = 50;
+                var list = failed.OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
+                logError($"[FAIL] Failed files ({list.Count}):");
+                foreach (var f in list.Take(MaxListed))
+                    logError($"[FAIL]   {f}");
+                if (list.Count > MaxListed)
+                    logError($"[FAIL]   ... and {list.Count - MaxListed} more");
+            }
             return (ok, fail);
         }
+
+        // Path as shown in the log: relative to the batch root when there is one.
+        private static string Shown(string path, string? root) =>
+            root is null ? path : Path.GetRelativePath(root, path);
 
         // Returns the input files whose output name would collide with another input's
         // (e.g. SKY00_BMP.DT1 and SKY00_TGA.DT1 are different textures, but in dds or a forced
@@ -290,7 +319,7 @@ namespace XenusDt1Decompiler
             }
             catch (Exception ex)
             {
-                logError($"[FAIL] {filePath} : read error: {ex.Message}");
+                logError($"[FAIL] {Shown(filePath, inputRoot)} : read error: {ex.Message}");
                 return false;
             }
 
@@ -301,7 +330,7 @@ namespace XenusDt1Decompiler
             }
             catch (Exception ex) when (ex is InvalidDataException or NotSupportedException)
             {
-                logError($"[FAIL] {filePath} : {ex.Message}");
+                logError($"[FAIL] {Shown(filePath, inputRoot)} : {ex.Message}");
                 return false;
             }
 
@@ -369,11 +398,7 @@ namespace XenusDt1Decompiler
             }
 
             if (!converted && canSoftwareConvert)
-            {
                 converted = TryConvertDdsWithoutTexconv(rawData, outPath, logError);
-                if (converted)
-                    logInfo($"[INFO] Built-in DDS decoder converted {Path.GetFileName(filePath)} -> {Path.GetExtension(outPath)}.");
-            }
 
             if (!converted)
             {
@@ -382,16 +407,21 @@ namespace XenusDt1Decompiler
                 File.WriteAllBytes(actualPath, rawData);
 
                 if (wantsConversion)
-                    logError($"[WARN] Unable to convert {Path.GetFileName(filePath)} to {finalExt} — saved as {realExt}.");
+                    logError($"[WARN] Unable to convert {Shown(filePath, inputRoot)} to {finalExt}; saved as {realExt}.");
 
                 outPath = actualPath;
             }
+            else if (IsRaw16Lut(rawData))
+            {
+                // DXT1CTRL / R5G6R5TABLE: engine lookup tables, not pictures (see TryDecodeRaw16Lut).
+                var name = Path.GetFileName(outPath);
+                if (finalExt is ".jpg" or ".jpeg")
+                    logError($"[WARN] {name} is an engine lookup table; JPG is lossy, so this preview cannot be turned back into the table. Use Auto or dds to keep the original .dds.");
+                else
+                    logInfo($"[INFO] {name} is an engine lookup table, saved as a lossless preview atlas for viewing only. Use the .dds from Auto or dds mode to repack it.");
+            }
 
-            logInfo(
-                $"{filePath}\n" +
-                $"-> {outPath}\n" +
-                $"({rawData.Length} bytes, real={realExt}) [OK]\n"
-            );
+            logInfo($"OK    {(inputRoot is null ? outPath : Path.GetRelativePath(outputRoot, outPath))}");
             return true;
         }
 
