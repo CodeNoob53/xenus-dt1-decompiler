@@ -12,33 +12,33 @@ namespace XenusDt1Decompiler
 {
     public class MainForm : Form
     {
-        // (shown text, format argument passed to DecompilerCore; "" = Auto)
-        private static readonly (string Text, string Ext)[] Formats =
+        // Output formats; Value is the format argument passed to DecompilerCore ("" = Auto).
+        private static readonly SegmentedControl.Option[] Formats =
         {
-            ("Auto: original format from the file name (recommended)", ""),
-            ("DDS: exactly as stored in the cache", "dds"),
-            ("TGA", "tga"),
-            ("PNG", "png"),
-            ("BMP", "bmp"),
-            ("JPG (lossy)", "jpg"),
+            new("Auto", "", "Original format from the file name (_TGA → .tga). Use it to put textures back into the game."),
+            new("DDS", "dds", "Exactly as stored in the game cache, without conversion."),
+            new("TGA", "tga", "Converted to TGA with texconv."),
+            new("PNG", "png", "Converted to PNG with texconv."),
+            new("BMP", "bmp", "Converted to BMP with texconv."),
+            new("JPG", "jpg", "Converted to JPG with texconv. Lossy, so not suitable for putting textures back."),
         };
 
         private static readonly string DefaultOutput = Path.Combine(AppContext.BaseDirectory, "out_tex");
 
-        private readonly Theme theme = Theme.Current();
+        private readonly Theme theme = Theme.Load();
         private readonly AppSettings settings = AppSettings.Load();
 
         private TextBox txtInput = null!;
         private TextBox txtOutput = null!;
-        private ComboBox cmbFormat = null!;
-        private Button btnBrowseInput = null!;
-        private Button btnBrowseOutput = null!;
-        private Button btnOpenOutput = null!;
-        private Button btnStart = null!;
-        private ProgressBar progress = null!;
+        private SegmentedControl formatSwitch = null!;
+        private Label lblFormatHint = null!;
+        private ThemedButton btnBrowseInput = null!;
+        private ThemedButton btnBrowseOutput = null!;
+        private ThemedButton btnOpenOutput = null!;
+        private ThemedButton btnStart = null!;
+        private ThinProgressBar progress = null!;
         private Label lblStatus = null!;
         private RichTextBox rtbLog = null!;
-        private ToolTip toolTip = null!;
         private System.Windows.Forms.Timer logTimer = null!;
 
         private CancellationTokenSource? cts;
@@ -52,113 +52,121 @@ namespace XenusDt1Decompiler
 
             txtInput.Text = settings.InputPath ?? "";
             txtOutput.Text = string.IsNullOrWhiteSpace(settings.OutputPath) ? DefaultOutput : settings.OutputPath;
-            int formatIndex = Array.FindIndex(Formats, f => f.Ext == (settings.Format ?? ""));
-            cmbFormat.SelectedIndex = formatIndex >= 0 ? formatIndex : 0;
+            int formatIndex = Array.FindIndex(Formats, f => f.Value == (settings.Format ?? ""));
+            formatSwitch.SelectedIndex = Math.Max(0, formatIndex);
+            lblFormatHint.Text = formatSwitch.SelectedOption.Description;
             UpdateOpenOutputButton();
+            ShowEmptyLogHint();
+        }
+
+        private void ShowEmptyLogHint()
+        {
+            rtbLog.SelectionColor = theme.Muted;
+            rtbLog.AppendText(
+                "Choose the game's CACHE\\TEXTURES folder (or a single .DT1 file) and press Start.\n" +
+                "You can also drop a folder or a file onto this window.");
         }
 
         private void InitializeComponent()
         {
             var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-            string verStr = ver is null ? "" : $" v{ver.Major}.{ver.Minor}.{ver.Build}";
-            Text = $"Xenus DT1 Decompiler{verStr}";
-            Size = new Size(760, 560);
-            MinimumSize = new Size(560, 420);
+            Text = "Xenus DT1 Decompiler" + (ver is null ? "" : $" v{ver.Major}.{ver.Minor}.{ver.Build}");
+            Size = new Size(820, 600);
+            MinimumSize = new Size(620, 460);
             StartPosition = FormStartPosition.CenterScreen;
-            Font = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point);
+            Font = theme.UiFont;
+            BackColor = theme.Back;
+            ForeColor = theme.Text;
+            Padding = new Padding(16, 14, 16, 14);
             // The icon is embedded in the exe (ApplicationIcon); single-file builds have no app.ico next to it.
             if (Environment.ProcessPath is { } exePath)
                 Icon = Icon.ExtractAssociatedIcon(exePath);
 
-            toolTip = new ToolTip { AutoPopDelay = 15000 };
-
             // Top: input, output, format
-            var panelTop = new TableLayoutPanel
+            var top = new TableLayoutPanel
             {
                 ColumnCount = 3,
-                RowCount = 3,
                 Dock = DockStyle.Top,
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                Padding = new Padding(10, 10, 10, 0),
+                BackColor = theme.Back,
             };
-            panelTop.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            panelTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            panelTop.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
-            txtInput = new TextBox { Dock = DockStyle.Fill, Margin = new Padding(3, 5, 6, 3), PlaceholderText = "Folder with .DT1 files, or a single .DT1 file (you can drop it here)" };
-            btnBrowseInput = new Button { Text = "Browse…", AutoSize = true, Margin = new Padding(0, 3, 0, 3) };
+            txtInput = NewTextBox("Folder with .DT1 files, or a single .DT1 file (you can drop it onto the window)");
+            btnBrowseInput = new ThemedButton { Text = "Browse…", Margin = new Padding(0, 4, 0, 4) };
             btnBrowseInput.Click += BtnBrowseInput_Click;
-            AddRow(panelTop, 0, "Input:", txtInput, btnBrowseInput);
+            AddRow(top, "Input", Field(txtInput), btnBrowseInput);
 
-            txtOutput = new TextBox { Dock = DockStyle.Fill, Margin = new Padding(3, 5, 6, 3) };
-            btnBrowseOutput = new Button { Text = "Browse…", AutoSize = true, Margin = new Padding(0, 3, 0, 3) };
-            btnBrowseOutput.Click += BtnBrowseOutput_Click;
+            txtOutput = NewTextBox("Where to save the textures");
             txtOutput.TextChanged += (_, _) => UpdateOpenOutputButton();
-            AddRow(panelTop, 1, "Output:", txtOutput, btnBrowseOutput);
+            btnBrowseOutput = new ThemedButton { Text = "Browse…", Margin = new Padding(0, 4, 0, 4) };
+            btnBrowseOutput.Click += BtnBrowseOutput_Click;
+            AddRow(top, "Output", Field(txtOutput), btnBrowseOutput);
 
-            cmbFormat = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill, Margin = new Padding(3, 5, 6, 3) };
-            foreach (var f in Formats)
-                cmbFormat.Items.Add(f.Text);
-            toolTip.SetToolTip(cmbFormat,
-                "Auto: the format the texture had before the engine cached it (KURSOR_1_TGA.DT1 → KURSOR_1.tga).\n" +
-                "This is the format to use when putting edited textures back into the game.\n\n" +
-                "DDS: the texture exactly as stored in the cache.\n" +
-                "TGA / PNG / BMP / JPG: converted with texconv. JPG is lossy.");
-            AddRow(panelTop, 2, "Format:", cmbFormat, null);
+            formatSwitch = new SegmentedControl { Anchor = AnchorStyles.Left, Margin = new Padding(0, 10, 0, 0), AccessibleName = "Format" };
+            formatSwitch.SetOptions(Formats);
+            formatSwitch.SelectedIndexChanged += (_, _) => lblFormatHint.Text = formatSwitch.SelectedOption.Description;
+            AddRow(top, "Format", formatSwitch, null, span: 2);
 
-            // Bottom: progress bar, status, buttons
-            var panelBottom = new TableLayoutPanel
+            lblFormatHint = new Label { AutoSize = true, ForeColor = theme.Muted, Margin = new Padding(2, 6, 0, 2) };
+            top.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            top.Controls.Add(lblFormatHint, 1, top.RowCount++);
+            top.SetColumnSpan(lblFormatHint, 2);
+
+            // Bottom: progress line, status, actions
+            var bottom = new TableLayoutPanel
             {
                 ColumnCount = 3,
                 RowCount = 2,
                 Dock = DockStyle.Bottom,
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                Padding = new Padding(10, 0, 10, 10),
+                BackColor = theme.Back,
             };
-            panelBottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            panelBottom.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            panelBottom.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            bottom.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            bottom.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
-            progress = new ProgressBar { Dock = DockStyle.Fill, Height = 8, Margin = new Padding(3, 0, 3, 6), Style = ProgressBarStyle.Continuous };
-            panelBottom.Controls.Add(progress, 0, 0);
-            panelBottom.SetColumnSpan(progress, 3);
+            progress = new ThinProgressBar { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 12) };
+            bottom.Controls.Add(progress, 0, 0);
+            bottom.SetColumnSpan(progress, 3);
 
-            lblStatus = new Label { Text = "Ready", AutoSize = true, Anchor = AnchorStyles.Left, Tag = "muted" };
-            panelBottom.Controls.Add(lblStatus, 0, 1);
+            lblStatus = new Label { Text = "Ready", AutoSize = true, Anchor = AnchorStyles.Left, ForeColor = theme.Muted, Margin = new Padding(0) };
+            bottom.Controls.Add(lblStatus, 0, 1);
 
-            btnOpenOutput = new Button { Text = "Open output folder", AutoSize = true, Padding = new Padding(8, 2, 8, 2) };
+            btnOpenOutput = new ThemedButton { Text = "Open output folder", Margin = new Padding(8, 0, 0, 0) };
             btnOpenOutput.Click += BtnOpenOutput_Click;
-            panelBottom.Controls.Add(btnOpenOutput, 1, 1);
+            bottom.Controls.Add(btnOpenOutput, 1, 1);
 
-            btnStart = new Button { Text = "Start", AutoSize = true, MinimumSize = new Size(110, 0), Padding = new Padding(8, 2, 8, 2), Font = new Font(Font, FontStyle.Bold) };
+            btnStart = new ThemedButton { Text = "Start", Primary = true, MinimumSize = new Size(120, 32), Font = theme.UiFontStrong, Margin = new Padding(8, 0, 0, 0) };
             btnStart.Click += BtnStart_Click;
-            panelBottom.Controls.Add(btnStart, 2, 1);
+            bottom.Controls.Add(btnStart, 2, 1);
             AcceptButton = btnStart;
 
             // Middle: log
             rtbLog = new RichTextBox
             {
-                Dock = DockStyle.Fill,
                 ReadOnly = true,
                 BorderStyle = BorderStyle.None,
-                Font = new Font("Consolas", 9F),
+                Font = theme.MonoFont,
+                ForeColor = theme.LogText,
                 WordWrap = true,
                 ScrollBars = RichTextBoxScrollBars.Vertical,
+                TabStop = false,
             };
-            var panelLog = new Panel { Dock = DockStyle.Fill, Padding = new Padding(13, 8, 13, 8) };
-            panelLog.Controls.Add(rtbLog);
+            var logFrame = new FieldFrame(rtbLog, new Padding(12, 10, 4, 10), theme.LogBack) { Dock = DockStyle.Fill };
+            var middle = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, 14, 0, 14), BackColor = theme.Back };
+            middle.Controls.Add(logFrame);
 
-            Controls.Add(panelLog);
-            Controls.Add(panelBottom);
-            Controls.Add(panelTop);
+            Controls.Add(middle);
+            Controls.Add(bottom);
+            Controls.Add(top);
 
             // Drag & drop a folder or a single .DT1 file anywhere onto the window.
-            AllowDrop = true;
-            DragEnter += Drop_DragEnter;
-            DragDrop += Drop_DragDrop;
-            foreach (var c in new Control[] { panelTop, txtInput, rtbLog, panelLog })
+            foreach (var c in new Control[] { this, top, middle, logFrame, rtbLog, txtInput })
             {
                 c.AllowDrop = true;
                 c.DragEnter += Drop_DragEnter;
@@ -170,11 +178,31 @@ namespace XenusDt1Decompiler
             logTimer.Start();
         }
 
-        private void AddRow(TableLayoutPanel panel, int row, string label, Control field, Control? button)
+        private TextBox NewTextBox(string placeholder) => new()
         {
+            BorderStyle = BorderStyle.None,
+            PlaceholderText = placeholder,
+            ForeColor = theme.Text,
+            Font = theme.UiFont,
+        };
+
+        private FieldFrame Field(TextBox box) =>
+            new(box, new Padding(10, 8, 10, 4), theme.Surface) { Height = 32, Dock = DockStyle.Fill, Margin = new Padding(0, 4, 8, 4) };
+
+        private void AddRow(TableLayoutPanel panel, string label, Control field, Control? button, int span = 1)
+        {
+            int row = panel.RowCount++;
             panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            panel.Controls.Add(new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 3, 6, 3) }, 0, row);
+            panel.Controls.Add(new Label
+            {
+                Text = label,
+                AutoSize = true,
+                Anchor = AnchorStyles.Left,
+                ForeColor = theme.Muted,
+                Margin = new Padding(0, field is SegmentedControl ? 10 : 4, 14, 4),
+            }, 0, row);
             panel.Controls.Add(field, 1, row);
+            panel.SetColumnSpan(field, span);
             if (button is not null)
                 panel.Controls.Add(button, 2, row);
         }
@@ -182,8 +210,8 @@ namespace XenusDt1Decompiler
         protected override void OnHandleCreated(EventArgs e)
         {
             base.OnHandleCreated(e);
-            theme.Apply(this);
-            progress.ForeColor = theme.Success;
+            theme.ApplyChrome(this);
+            theme.UseDarkScrollbars(rtbLog);
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
@@ -197,7 +225,7 @@ namespace XenusDt1Decompiler
         {
             settings.InputPath = txtInput.Text.Trim();
             settings.OutputPath = txtOutput.Text.Trim();
-            settings.Format = Formats[Math.Max(0, cmbFormat.SelectedIndex)].Ext;
+            settings.Format = formatSwitch.SelectedOption.Value;
             settings.Save();
         }
 
@@ -312,7 +340,7 @@ namespace XenusDt1Decompiler
 
             string input = txtInput.Text.Trim();
             string output = txtOutput.Text.Trim();
-            string ext = Formats[Math.Max(0, cmbFormat.SelectedIndex)].Ext;
+            string ext = formatSwitch.SelectedOption.Value;
             bool singleFile = File.Exists(input) && DecompilerCore.IsDt1OrDt2(input);
 
             if (!singleFile && !Directory.Exists(input))
@@ -334,7 +362,7 @@ namespace XenusDt1Decompiler
             while (logQueue.TryDequeue(out _)) { } // drop leftovers from a previous run
             Log($"Input:  {input}");
             Log($"Output: {output}");
-            Log($"Format: {Formats[Math.Max(0, cmbFormat.SelectedIndex)].Text}");
+            Log($"Format: {formatSwitch.SelectedOption.Text}");
             Log("");
 
             var token = cts.Token;
@@ -346,7 +374,7 @@ namespace XenusDt1Decompiler
                     if (singleFile)
                     {
                         Directory.CreateDirectory(output);
-                        string? texconv = string.IsNullOrEmpty(ext) || ext != "dds" ? DecompilerCore.ResolveTexconv() : null;
+                        string? texconv = ext != "dds" ? DecompilerCore.ResolveTexconv() : null;
                         bool ok = DecompilerCore.DecodeOneFile(input, output, null, ext, texconv, Log, Log);
                         ReportProgress(1, 1);
                         return ok ? (1, 0) : (0, 1);
@@ -382,8 +410,8 @@ namespace XenusDt1Decompiler
             Volatile.Write(ref lastProgressTick, now);
             BeginInvoke(() =>
             {
-                progress.Maximum = Math.Max(1, total);
-                progress.Value = Math.Min(Math.Max(progress.Value, done), progress.Maximum);
+                progress.Maximum = total;
+                progress.Value = Math.Max(progress.Value, done);
                 lblStatus.Text = $"Processing… {progress.Value} / {total}";
             });
         }
@@ -392,7 +420,7 @@ namespace XenusDt1Decompiler
         {
             txtInput.ReadOnly = running;
             txtOutput.ReadOnly = running;
-            cmbFormat.Enabled = !running;
+            formatSwitch.Enabled = !running;
             btnBrowseInput.Enabled = !running;
             btnBrowseOutput.Enabled = !running;
             btnStart.Enabled = true;
