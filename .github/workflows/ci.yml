@@ -1,11 +1,11 @@
 name: CI
 
-# Builds the app and runs the unit tests on every pull request and on pushes to task branches.
+# Builds the app and runs the unit tests on every pull request (each push to a PR branch re-runs it).
+# Branches without a PR are not built automatically; start the workflow by hand from the Actions tab
+# if needed. Pushes to main come from merged PRs that have already passed this check.
 on:
   pull_request:
-  push:
-    branches-ignore:
-      - main
+  workflow_dispatch:
 
 permissions:
   contents: read
