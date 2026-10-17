@@ -187,7 +187,8 @@ namespace XenusDt1Decompiler
             string? userExt,
             Action<string> logInfo,
             Action<string> logError,
-            Action<int, int>? onProgress = null)
+            Action<int, int>? onProgress = null,
+            CancellationToken cancellationToken = default)
         {
             var files = Directory.EnumerateFiles(inputPath, "*.DT*", SearchOption.AllDirectories)
                 .Where(IsDt1OrDt2)
@@ -204,24 +205,72 @@ namespace XenusDt1Decompiler
             if (texconvPath is null)
                 logError("[WARN] texconv.exe not found — format conversion unavailable, files will be saved as .dds.");
 
+            var keepSuffix = FindOutputNameClashes(files, inputPath, userExt);
+            if (keepSuffix.Count > 0)
+                logInfo($"[INFO] {keepSuffix.Count} textures would share an output file name; they keep their format suffix: " +
+                        string.Join(", ", keepSuffix.Select(Path.GetFileNameWithoutExtension)));
+
+            // Files are independent and every one gets a unique output path, so they are decoded
+            // and converted in parallel; texconv runs as one process per file.
             int ok = 0;
             int fail = 0;
             int done = 0;
-            foreach (var file in files)
+            var options = new ParallelOptions
             {
-                if (DecodeOneFile(file, outputRoot, inputPath, userExt, texconvPath, logInfo, logError))
+                MaxDegreeOfParallelism = Environment.ProcessorCount,
+                CancellationToken = cancellationToken,
+            };
+            try
+            {
+                Parallel.ForEach(files, options, file =>
                 {
-                    ok++;
-                }
-                else
-                {
-                    fail++;
-                }
-                onProgress?.Invoke(++done, files.Count);
+                    bool success;
+                    try
+                    {
+                        success = DecodeOneFile(file, outputRoot, inputPath, userExt, texconvPath, logInfo, logError,
+                            keepSuffix.Contains(file));
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        logError($"[FAIL] {file} : {ex.Message}");
+                        success = false;
+                    }
+
+                    Interlocked.Increment(ref success ? ref ok : ref fail);
+                    onProgress?.Invoke(Interlocked.Increment(ref done), files.Count);
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                logError($"[WARN] Cancelled after {done} of {files.Count} files.");
             }
 
             logInfo($"Done. OK={ok}, FAIL={fail}");
             return (ok, fail);
+        }
+
+        // Returns the input files whose output name would collide with another input's
+        // (e.g. SKY00_BMP.DT1 and SKY00_TGA.DT1 are different textures, but in dds or a forced
+        // format both would become SKY00.dds). Those files keep their format suffix in the output name.
+        internal static HashSet<string> FindOutputNameClashes(IEnumerable<string> files, string inputRoot, string? userExt)
+        {
+            static string PlannedExt(string hintExt, string? userExt)
+            {
+                if (!string.IsNullOrWhiteSpace(userExt))
+                    return "." + userExt.TrimStart('.').ToLowerInvariant();
+                return hintExt is ".tga" or ".bmp" or ".png" or ".jpg" or ".jpeg" or ".dds" ? hintExt : ".dds";
+            }
+
+            return files
+                .GroupBy(f =>
+                {
+                    var (basePath, hintExt) = ParseFileNameAndExtension(f, null);
+                    var relDir = Path.GetDirectoryName(Path.GetRelativePath(inputRoot, f)) ?? "";
+                    return Path.Combine(relDir, basePath) + PlannedExt(hintExt, userExt);
+                }, StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() > 1)
+                .SelectMany(g => g)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
         }
 
         public static bool DecodeOneFile(
@@ -231,7 +280,8 @@ namespace XenusDt1Decompiler
             string? userExt,
             string? texconvPath,
             Action<string> logInfo,
-            Action<string> logError)
+            Action<string> logError,
+            bool keepFormatSuffix = false)
         {
             byte[] packed;
             try
@@ -279,7 +329,8 @@ namespace XenusDt1Decompiler
                     : realExt;
             }
 
-            var newFileName = nameInfo.basePath + finalExt;
+            var outStem = keepFormatSuffix ? Path.GetFileNameWithoutExtension(filePath) : nameInfo.basePath;
+            var newFileName = outStem + finalExt;
             var outPath = Path.Combine(outputRoot, outRelDir, newFileName);
             var outDir = Path.GetDirectoryName(outPath)!;
             Directory.CreateDirectory(outDir);
@@ -290,15 +341,31 @@ namespace XenusDt1Decompiler
             bool converted = false;
             bool wantsConversion = !finalExt.Equals(realExt, StringComparison.OrdinalIgnoreCase);
             bool canSoftwareConvert = wantsConversion && realExt == ".dds";
-            string? tmpDds = null;
 
             // texconv would treat the integer lookup tables as floats and clamp them; use the built-in packer.
             if (texconvPath is not null && wantsConversion && realExt == ".dds" && !IsRaw16Lut(rawData))
             {
-                // texconv needs a DDS file on disk; write a temp one then convert
-                tmpDds = Path.ChangeExtension(outPath, ".dds");
-                File.WriteAllBytes(tmpDds, rawData);
-                converted = TryConvertWithTexconv(texconvPath, tmpDds, outPath, logError);
+                // texconv needs a DDS file on disk. Use a private temp folder so that parallel
+                // conversions never touch each other's files or a real <name>.dds in the output folder.
+                var workDir = Path.Combine(Path.GetTempPath(), "xenus-dt1", Guid.NewGuid().ToString("N"));
+                try
+                {
+                    Directory.CreateDirectory(workDir);
+                    var tmpDds = Path.Combine(workDir, Path.GetFileNameWithoutExtension(outPath) + ".dds");
+                    File.WriteAllBytes(tmpDds, rawData);
+                    converted = TryConvertWithTexconv(texconvPath, tmpDds, outPath, logError);
+                }
+                finally
+                {
+                    try
+                    {
+                        Directory.Delete(workDir, recursive: true);
+                    }
+                    catch (Exception ex)
+                    {
+                        logError($"[WARN] Failed to delete temp folder \"{workDir}\": {ex.Message}");
+                    }
+                }
             }
 
             if (!converted && canSoftwareConvert)
@@ -308,29 +375,11 @@ namespace XenusDt1Decompiler
                     logInfo($"[INFO] Built-in DDS decoder converted {Path.GetFileName(filePath)} -> {Path.GetExtension(outPath)}.");
             }
 
-            if (converted && tmpDds is not null && !tmpDds.Equals(outPath, StringComparison.OrdinalIgnoreCase))
-            {
-                try
-                {
-                    File.Delete(tmpDds);
-                }
-                catch (Exception ex)
-                {
-                    logError($"[WARN] Failed to delete temp file \"{tmpDds}\": {ex.Message}");
-                }
-            }
-
             if (!converted)
             {
                 // Save with real extension (no conversion needed or conversion failed)
                 var actualPath = Path.ChangeExtension(outPath, realExt);
-
-                if (!(tmpDds is not null
-                    && actualPath.Equals(tmpDds, StringComparison.OrdinalIgnoreCase)
-                    && File.Exists(actualPath)))
-                {
-                    File.WriteAllBytes(actualPath, rawData);
-                }
+                File.WriteAllBytes(actualPath, rawData);
 
                 if (wantsConversion)
                     logError($"[WARN] Unable to convert {Path.GetFileName(filePath)} to {finalExt} — saved as {realExt}.");
@@ -444,16 +493,15 @@ namespace XenusDt1Decompiler
             string finalPath,
             Action<string> logError)
         {
-            string outDir  = Path.GetDirectoryName(finalPath)!;
+            // texconv writes <stem>.<ext> next to the input (the input is in its own temp folder),
+            // and the result is then moved to finalPath.
+            string workDir = Path.GetDirectoryName(ddsPath)!;
             string outExt  = Path.GetExtension(finalPath).TrimStart('.');
-            string outName = Path.GetFileNameWithoutExtension(finalPath);
 
-            // texconv writes <name>.<ext> into the output directory.
             // -y  = overwrite without prompt
             // -ft = output format
             // -o  = output directory
-            // -fl = feature level (needed for some DX formats, safe to omit for TGA/PNG/BMP)
-            var args = $"-y -ft {outExt} -o \"{outDir}\" \"{ddsPath}\"";
+            var args = $"-y -ft {outExt} -o \"{workDir}\" \"{ddsPath}\"";
             try
             {
                 var psi = new ProcessStartInfo(texconvPath, args)
@@ -469,14 +517,12 @@ namespace XenusDt1Decompiler
                 string stderr = proc.StandardError.ReadToEnd();
                 proc.WaitForExit(30_000);
 
-                // texconv writes output as <stem>.<ext> — rename if stem differs from desired
-                string texconvOut = Path.Combine(outDir,
+                string texconvOut = Path.Combine(workDir,
                     Path.GetFileNameWithoutExtension(ddsPath) + "." + outExt);
 
                 if (File.Exists(texconvOut))
                 {
-                    if (!texconvOut.Equals(finalPath, StringComparison.OrdinalIgnoreCase))
-                        File.Move(texconvOut, finalPath, overwrite: true);
+                    File.Move(texconvOut, finalPath, overwrite: true);
                     return true;
                 }
 
