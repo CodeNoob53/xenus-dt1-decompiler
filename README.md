@@ -45,11 +45,11 @@ Offset  Size  Description
 | Method | Payload |
 |---|---|
 | 0 | Stored, no compression |
-| 1..3 | Another codec, not used by any game file (unsupported) |
+| 1..3 | UCL NRV2E stream (8-bit variant). Methods 2 and 3 first XOR the first `min(16, N)` bytes with `0x6E`; method 1 doesn't |
 | 4..6 | First `min(16, N)` bytes XOR `0x6E`, then a standard zlib stream (`0x16 0x30` → `0x78 0x5E`) |
 | 7 | Same as 4..6; if the payload is ≥ 256 bytes it is additionally encrypted with a key table (unsupported, only `resource.DT1` uses it) |
 
-All texture cache files use method 5.
+Xenus 2 uses method 5; Boiling Point uses method 2.
 
 A texture can have up to three cache files:
 
@@ -235,6 +235,9 @@ The directory structure relative to `input` is reproduced in `output_dir`.
 ---
 
 ## Changelog
+
+### v3.0.2
+- **Boiling Point works again:** Its whole texture cache uses compression method 2, which v3.0.0 and v3.0.1 did not support. All 2603 Boiling Point textures failed. Methods 1–3 are now decoded: a UCL NRV2E decompressor reversed from `VELoader.dll`. The output is byte-identical to the VELoader-based v2.2 build on all 2603 files. Xenus 2 output is unchanged.
 
 ### v3.0.1
 - **No .NET installation needed:** The release is now a self-contained 64-bit exe. v3.0.0 was a framework-dependent 32-bit build and did not start without the .NET 8 Desktop Runtime **x86**, which most PCs don't have. The zip is now `...-win-x64.zip` (~64 MB). The x86 target has no use any more: it was only needed for the 32-bit `VELoader.dll`, and the bundled `texconv.exe` is 64-bit.

@@ -24,9 +24,10 @@ namespace XenusDt1Decompiler
         //   dword1: bits 27..31 = key index (method 7 only), bits 0..26 = packed size incl. header
         // Payload (data[8 .. packedSize]):
         //   method 0    -> stored as-is
+        //   method 1..3 -> UCL NRV2E stream; methods 2 and 3 XOR the first min(16, len) bytes with 0x6E first
+        //                  (Boiling Point uses method 2)
         //   method 4..7 -> first min(16, len) bytes XOR 0x6E, then a plain zlib stream (zlib 1.2.2)
         //   method 7 with payload >= 0x100 bytes is additionally encrypted with a key table (unsupported)
-        //   methods 1..3 use another codec that no game file uses (unsupported)
         public static byte[] UnpackDt(byte[] packed)
         {
             if (packed.Length < 8)
@@ -38,8 +39,6 @@ namespace XenusDt1Decompiler
             int unpackedSize = (int)(h0 & 0x0FFFFFFF);
             int packedSize = (int)(h1 & 0x07FFFFFF);
 
-            if (method is >= 1 and <= 3)
-                throw new NotSupportedException($"compression method {method} is not supported");
             if (method == 7 && (uint)(packedSize - 8) >= 0x100) // unsigned, as in VELoader
                 throw new NotSupportedException($"method 7 (encrypted, key {h1 >> 27}) is not supported");
             if (method > 7)
@@ -57,8 +56,14 @@ namespace XenusDt1Decompiler
             }
 
             var payload = packed.AsSpan(8, payloadLen).ToArray();
-            for (int i = 0; i < Math.Min(16, payload.Length); i++)
-                payload[i] ^= 0x6E;
+            if (method != 1)
+            {
+                for (int i = 0; i < Math.Min(16, payload.Length); i++)
+                    payload[i] ^= 0x6E;
+            }
+
+            if (method <= 3)
+                return DecompressNrv2e(payload, unpackedSize);
 
             var result = new byte[unpackedSize];
             using (var zs = new ZLibStream(new MemoryStream(payload), CompressionMode.Decompress))
@@ -74,6 +79,106 @@ namespace XenusDt1Decompiler
                     throw new InvalidDataException($"zlib stream ended early ({read} of {unpackedSize} bytes)");
             }
             return result;
+        }
+
+        // UCL NRV2E decompressor with an 8-bit bit buffer (ucl_nrv2e_decompress_safe_8),
+        // as used by VELoader.dll for methods 1..3.
+        private static byte[] DecompressNrv2e(byte[] src, int outLen)
+        {
+            var dst = new byte[outLen];
+            int ilen = 0, olen = 0;
+            uint bb = 0;
+            uint lastOff = 1;
+
+            int GetBit()
+            {
+                if ((bb & 0x7F) != 0)
+                {
+                    bb *= 2;
+                }
+                else
+                {
+                    if (ilen >= src.Length)
+                        throw new InvalidDataException("NRV2E input overrun");
+                    bb = (uint)src[ilen++] * 2 + 1;
+                }
+                return (int)((bb >> 8) & 1);
+            }
+
+            byte NextByte()
+            {
+                if (ilen >= src.Length)
+                    throw new InvalidDataException("NRV2E input overrun");
+                return src[ilen++];
+            }
+
+            while (true)
+            {
+                while (GetBit() == 1)
+                {
+                    if (olen >= outLen)
+                        throw new InvalidDataException("NRV2E output overrun");
+                    dst[olen++] = NextByte();
+                }
+
+                uint off = 1;
+                while (true)
+                {
+                    off = off * 2 + (uint)GetBit();
+                    if (GetBit() == 1) break;
+                    off = (off - 1) * 2 + (uint)GetBit();
+                }
+
+                uint len;
+                if (off == 2)
+                {
+                    off = lastOff;
+                    len = (uint)GetBit();
+                }
+                else
+                {
+                    off = (off - 3) * 256 + NextByte();
+                    if (off == 0xFFFFFFFF)
+                        break; // end of stream
+                    len = (off ^ 0xFFFFFFFF) & 1;
+                    off = (off >> 1) + 1;
+                    lastOff = off;
+                }
+
+                if (len != 0)
+                {
+                    len = 1 + (uint)GetBit();
+                }
+                else if (GetBit() == 1)
+                {
+                    len = 3 + (uint)GetBit();
+                }
+                else
+                {
+                    len = 1;
+                    do
+                    {
+                        len = len * 2 + (uint)GetBit();
+                    } while (GetBit() == 0);
+                    len += 3;
+                }
+                if (off > 0x500)
+                    len++;
+
+                if (off > (uint)olen)
+                    throw new InvalidDataException("NRV2E lookbehind overrun");
+                if (olen + len + 1 > outLen)
+                    throw new InvalidDataException("NRV2E output overrun");
+                int from = olen - (int)off;
+                for (uint i = 0; i <= len; i++)
+                    dst[olen++] = dst[from++];
+            }
+
+            if (olen != outLen)
+                throw new InvalidDataException($"NRV2E stream ended early ({olen} of {outLen} bytes)");
+            if (ilen != src.Length)
+                throw new InvalidDataException($"NRV2E stream has {src.Length - ilen} trailing bytes");
+            return dst;
         }
 
         public static (int Ok, int Fail) DecodeDirectory(
