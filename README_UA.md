@@ -113,11 +113,14 @@ xenus-dt1-decompiler/
 │       ├── Program.cs
 │       ├── DecompilerCore.cs
 │       └── MainForm.cs
+├── tests/
+│   └── XenusDt1Decompiler.Tests/   ← xUnit-тести, лише синтетичні дані
 ├── dist/                       ← release-артефакти (включаються в zip)
 │   ├── app.ico
 │   └── README.txt
 ├── .github/
 │   └── workflows/
+│       ├── ci.yml              ← збірка + тести на pull request
 │       └── release.yml
 ├── run_decompiler.bat
 ├── .gitignore
@@ -140,6 +143,14 @@ dotnet build .\src\XenusDt1Decompiler\XenusDt1Decompiler.csproj -c Release
 ```powershell
 dotnet publish .\src\XenusDt1Decompiler\XenusDt1Decompiler.csproj -c Release -r win-x64 -o .\publish
 ```
+
+## Тести
+
+```powershell
+dotnet test .\tests\XenusDt1Decompiler.Tests
+```
+
+Тести перевіряють розпакування (усі методи стиснення, зокрема через кодер NRV2E для синтетичних потоків методів 1–3), обробку помилок, визначення й перестановку каналів normal maps і атлас службових таблиць без втрат. Вхідні дані генеруються в коді, тож файли гри не потрібні. Workflow CI запускає тести на кожен pull request.
 
 ---
 

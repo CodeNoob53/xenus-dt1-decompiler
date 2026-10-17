@@ -113,11 +113,14 @@ xenus-dt1-decompiler/
 │       ├── Program.cs
 │       ├── DecompilerCore.cs
 │       └── MainForm.cs
+├── tests/
+│   └── XenusDt1Decompiler.Tests/   ← xUnit tests, synthetic fixtures only
 ├── dist/                       ← release assets (bundled into the zip)
 │   ├── app.ico
 │   └── README.txt
 ├── .github/
 │   └── workflows/
+│       ├── ci.yml              ← build + tests on pull requests
 │       └── release.yml
 ├── run_decompiler.bat
 ├── .gitignore
@@ -140,6 +143,14 @@ Release build: one self-contained, compressed exe (~64 MB) that runs without an 
 ```powershell
 dotnet publish .\src\XenusDt1Decompiler\XenusDt1Decompiler.csproj -c Release -r win-x64 -o .\publish
 ```
+
+## Tests
+
+```powershell
+dotnet test .\tests\XenusDt1Decompiler.Tests
+```
+
+The tests cover unpacking (all compression methods, including an NRV2E encoder for synthetic method 1–3 streams), error handling, normal map detection and remapping, and the lossless lookup-table atlas. They build their inputs in code, so no game files are needed. The CI workflow runs them on every pull request.
 
 ---
 
