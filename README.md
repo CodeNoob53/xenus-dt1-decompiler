@@ -98,9 +98,8 @@ Normal maps are identified from the pixel data itself, with no file names or `.M
 
 ## Requirements
 
-- **OS:** Windows (x86 or x64)
-- **Runtime:** [.NET SDK 8.0+](https://dotnet.microsoft.com/download/dotnet/8.0)
-- No game DLLs are required.
+- **To run a release:** 64-bit Windows. Nothing else: the release exe is self-contained (the .NET runtime is bundled), and no game DLLs are needed.
+- **To build:** [.NET SDK 8.0+](https://dotnet.microsoft.com/download/dotnet/8.0)
 
 ---
 
@@ -136,13 +135,11 @@ Standard debug/release build:
 dotnet build .\src\XenusDt1Decompiler\XenusDt1Decompiler.csproj -c Release
 ```
 
-Self-contained single-exe publish (recommended for distribution):
+Release build: one self-contained, compressed exe (~64 MB) that runs without an installed .NET runtime. The csproj enables this whenever a runtime identifier is given:
 
 ```powershell
-dotnet publish .\src\XenusDt1Decompiler\XenusDt1Decompiler.csproj -c Release -r win-x86 --self-contained true
+dotnet publish .\src\XenusDt1Decompiler\XenusDt1Decompiler.csproj -c Release -r win-x64 -o .\publish
 ```
-
-The executable ends up in `bin\Release\net8.0-windows\win-x86\publish\`. Any other runtime (e.g. `win-x64`) works as well.
 
 ---
 
@@ -152,9 +149,9 @@ Releases are published by `.github/workflows/release.yml`. To release a new vers
 
 1. Bump `<Version>` in `src/XenusDt1Decompiler/XenusDt1Decompiler.csproj` (for example `3.0.1`).
 2. Add a `### v3.0.1` section to the changelog in `README.md`. It becomes the release notes.
-3. Push to `main`.
+3. Merge it into `main` through a pull request (direct pushes to `main` are blocked by a ruleset).
 
-On every push to `main`, the workflow checks whether the tag `v<Version>` already exists. If it does not, the workflow builds the project, downloads the latest `texconv.exe` from the [DirectXTex releases](https://github.com/microsoft/DirectXTex/releases), creates the tag and a GitHub Release with a `win-x86.zip` archive, and mirrors the release to [xenus-dt1-decompiler-release-repo](https://github.com/CodeNoob53/xenus-dt1-decompiler-release-repo). Pushes that do not change the version publish nothing.
+On every push to `main` (including merged pull requests), the workflow checks whether the tag `v<Version>` already exists. If it does not, the workflow builds the project, downloads the latest `texconv.exe` from the [DirectXTex releases](https://github.com/microsoft/DirectXTex/releases), creates the tag and a GitHub Release with a `win-x64.zip` archive, and mirrors the release to [xenus-dt1-decompiler-release-repo](https://github.com/CodeNoob53/xenus-dt1-decompiler-release-repo). Pushes that do not change the version publish nothing.
 
 Pushing a `v*` tag manually, or running the workflow by hand from the Actions tab, also publishes a release.
 
@@ -166,7 +163,6 @@ The zip extracts into a single named folder:
 xenus-dt1-decompiler-vX.X.X/
 ├── xenus-dt1-decompiler.exe
 ├── texconv.exe
-├── app.ico
 ├── run_decompiler.bat
 └── README.txt
 ```
@@ -239,6 +235,10 @@ The directory structure relative to `input` is reproduced in `output_dir`.
 ---
 
 ## Changelog
+
+### v3.0.1
+- **No .NET installation needed:** The release is now a self-contained 64-bit exe. v3.0.0 was a framework-dependent 32-bit build and did not start without the .NET 8 Desktop Runtime **x86**, which most PCs don't have. The zip is now `...-win-x64.zip` (~64 MB). The x86 target has no use any more: it was only needed for the 32-bit `VELoader.dll`, and the bundled `texconv.exe` is 64-bit.
+- The window icon is loaded from the exe itself.
 
 ### v3.0.0
 - **No more `VELoader.dll`:** The DT1/DT2 decompressor was reverse-engineered and reimplemented in managed code (zlib with the first 16 bytes XOR `0x6E`). The tool no longer loads any game DLL, works with any copy of the game, and is no longer limited to 32-bit (x86) builds. Output is byte-identical to the VELoader-based versions.

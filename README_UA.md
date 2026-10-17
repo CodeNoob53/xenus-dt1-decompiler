@@ -98,9 +98,8 @@ Normal maps визначаються за самими пікселями, бе�
 
 ## Вимоги
 
-- **ОС:** Windows (x86 або x64)
-- **Runtime:** [.NET SDK 8.0+](https://dotnet.microsoft.com/download/dotnet/8.0)
-- Жодні DLL гри не потрібні.
+- **Для запуску релізу:** 64-бітна Windows. Більше нічого: exe релізу self-contained (рушій .NET усередині), DLL гри не потрібні.
+- **Для збірки:** [.NET SDK 8.0+](https://dotnet.microsoft.com/download/dotnet/8.0)
 
 ---
 
@@ -136,13 +135,11 @@ xenus-dt1-decompiler/
 dotnet build .\src\XenusDt1Decompiler\XenusDt1Decompiler.csproj -c Release
 ```
 
-Self-contained публікація в один exe (рекомендовано для поширення):
+Збірка для релізу: один self-contained стиснений exe (~64 МБ), що працює без встановленого .NET. csproj вмикає це, щойно вказано runtime identifier:
 
 ```powershell
-dotnet publish .\src\XenusDt1Decompiler\XenusDt1Decompiler.csproj -c Release -r win-x86 --self-contained true
+dotnet publish .\src\XenusDt1Decompiler\XenusDt1Decompiler.csproj -c Release -r win-x64 -o .\publish
 ```
-
-Виконуваний файл буде в `bin\Release\net8.0-windows\win-x86\publish\`. Підходить і будь-який інший runtime (наприклад `win-x64`).
 
 ---
 
@@ -152,9 +149,9 @@ dotnet publish .\src\XenusDt1Decompiler\XenusDt1Decompiler.csproj -c Release -r 
 
 1. Підняти `<Version>` у `src/XenusDt1Decompiler/XenusDt1Decompiler.csproj` (наприклад `3.0.1`).
 2. Додати розділ `### v3.0.1` у changelog у `README.md`. Він стане описом релізу.
-3. Запушити в `main`.
+3. Змерджити в `main` через pull request (прямі пуші в `main` заблоковані ruleset-ом).
 
-На кожен пуш у `main` workflow перевіряє, чи існує тег `v<Version>`. Якщо ні — збирає проєкт, завантажує останній `texconv.exe` з [релізів DirectXTex](https://github.com/microsoft/DirectXTex/releases), створює тег і GitHub Release з архівом `win-x86.zip`, а потім дублює реліз у [xenus-dt1-decompiler-release-repo](https://github.com/CodeNoob53/xenus-dt1-decompiler-release-repo). Пуші без зміни версії нічого не публікують.
+На кожен пуш у `main` (зокрема мерж PR) workflow перевіряє, чи існує тег `v<Version>`. Якщо ні — збирає проєкт, завантажує останній `texconv.exe` з [релізів DirectXTex](https://github.com/microsoft/DirectXTex/releases), створює тег і GitHub Release з архівом `win-x64.zip`, а потім дублює реліз у [xenus-dt1-decompiler-release-repo](https://github.com/CodeNoob53/xenus-dt1-decompiler-release-repo). Пуші без зміни версії нічого не публікують.
 
 Реліз також можна випустити, вручну запушивши тег `v*` або запустивши workflow з вкладки Actions.
 
@@ -166,7 +163,6 @@ dotnet publish .\src\XenusDt1Decompiler\XenusDt1Decompiler.csproj -c Release -r 
 xenus-dt1-decompiler-vX.X.X/
 ├── xenus-dt1-decompiler.exe
 ├── texconv.exe
-├── app.ico
 ├── run_decompiler.bat
 └── README.txt
 ```
@@ -239,6 +235,10 @@ xenus-dt1-decompiler.exe <вхід> [вихідна_папка] [формат]
 ---
 
 ## Changelog
+
+### v3.0.1
+- **Не потрібно встановлювати .NET:** реліз тепер — self-contained 64-бітний exe. v3.0.0 збиралась як 32-бітна збірка, залежна від runtime, і не запускалась без .NET 8 Desktop Runtime **x86**, якого здебільшого немає. Архів тепер `...-win-x64.zip` (~64 МБ). Ціль x86 більше не має сенсу: вона була потрібна лише для 32-бітної `VELoader.dll`, а `texconv.exe` у комплекті 64-бітний.
+- Іконка вікна береться із самого exe.
 
 ### v3.0.0
 - **Більше без `VELoader.dll`:** Декомпресор DT1/DT2 розібрано (реверс-інжиніринг) і перенесено в керований код: це zlib, у якого перші 16 байт XOR `0x6E`. Утиліта більше не завантажує жодних DLL гри, працює з будь-якою копією гри і не обмежена 32-бітною (x86) збіркою. Результат побайтово ідентичний версіям на основі VELoader.

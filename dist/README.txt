@@ -12,9 +12,8 @@ Output formats: DDS, TGA, PNG, BMP, JPG.
 
 REQUIREMENTS
 ------------
-- Windows x86 or x64
-- .NET 8 Runtime: https://dotnet.microsoft.com/download/dotnet/8.0
-- No game DLLs are needed (VELoader.dll is no longer required since v3.0.0).
+- 64-bit Windows. Nothing to install: .NET is bundled into the exe,
+  and no game DLLs are needed.
 
 
 INSTALLATION
