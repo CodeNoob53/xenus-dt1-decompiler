@@ -26,12 +26,18 @@ USAGE - GUI
 -----------
 Double-click xenus-dt1-decompiler.exe (no arguments).
 
-1. Select the input folder containing .DT1 files.
-2. Select the output folder.
-3. Choose output format:
-     Auto        - detects real format from magic bytes (recommended)
-     dds/tga/png/bmp/jpg - converts via texconv.exe (included)
-5. Click START DECOMPILE.
+1. Input: a folder with .DT1 files, or a single .DT1 file.
+   You can also drop a folder or a file onto the window.
+2. Output: where to save the textures (default: out_tex next to the exe).
+3. Format:
+     Auto      - original format from the file name, e.g. _TGA -> .tga
+                 (recommended; this is what the game expects back)
+     DDS       - exactly as stored in the cache
+     TGA/PNG/BMP/JPG - converted with texconv.exe (included); JPG is lossy
+4. Click Start. Cancel stops the run; Open output folder shows the result.
+
+Paths and format are remembered between runs. The window follows the
+Windows light/dark mode.
 
 
 USAGE - Command Line

@@ -94,7 +94,7 @@ Although the formats are half-float, the values are **16-bit integer bit pattern
   - with 4 channels, the `(c2, c3)` pair is placed in a second block to the right;
   - volume slices are stacked top to bottom.
 
-  `DXT1CTRL` becomes a 256×256 image. `R5G6R5TABLE` becomes 64×2048 (2 channel pairs × 32 slices). The top-left block (slice 0, channels 0–1) looks the same as in Noesis. `jpg` is lossy and should not be used for these tables.
+  `DXT1CTRL` becomes a 256×256 image. `R5G6R5TABLE` becomes 64×2048 (2 channel pairs × 32 slices). The top-left block (slice 0, channels 0–1) looks the same as in Noesis. This atlas is **for viewing only**: the alpha channel holds data (row 0 of `DXT1CTRL` is fully transparent), so image editors can damage it, and `jpg` is lossy. To put a table back into the game, use the `.dds` from Auto or `dds` mode. The log reminds you of this when a table is exported to an 8-bit format.
 
 ---
 
@@ -198,15 +198,14 @@ The utility supports two modes: **Graphical User Interface (GUI)** and **Command
 
 ### GUI Mode
 
-Run `xenus-dt1-decompiler.exe` by double-clicking it (without arguments). A window will appear allowing you to:
+Run `xenus-dt1-decompiler.exe` without arguments.
 
-1. Select the input directory containing `.DT1` / `.DT2` files.
-2. Select the output directory.
-3. Choose the output format (`Auto`, `dds`, `tga`, `bmp`, `png`, `jpg`).
-4. Click **START DECOMPILE** and watch the progress in the log window.
+1. **Input**: a folder with `.DT1` files (subfolders are included) or a single `.DT1` file. You can also drop a folder or a file onto the window; a dropped file is processed on its own.
+2. **Output**: where to save the textures. Defaults to `out_tex` next to the exe.
+3. **Format**: **Auto** saves each texture in the format it had before the engine cached it (`_TGA` → `.tga`), which is what the game expects when you put a texture back. **DDS** keeps the texture exactly as stored in the cache. The other formats are converted with [texconv](https://github.com/microsoft/DirectXTex/wiki/Texconv) (bundled in the release archive). Hover over the list for details.
+4. Click **Start**. The progress bar and the log show each file. **Cancel** stops the run, and **Open output folder** opens the result.
 
-**Auto format** — detects the real format from magic bytes and saves with the correct extension.
-**Explicit format** — converts the decompressed DDS to the chosen format via [texconv](https://github.com/microsoft/DirectXTex/wiki/Texconv) (bundled in the release archive).
+The log shows one line per file, warnings in yellow and failures in red, and ends with a summary that lists the failed files. The input, output and format are remembered between runs (in `%AppData%\xenus-dt1-decompiler\settings.json`). The window follows the Windows light or dark mode.
 
 ### CLI Mode
 
@@ -260,6 +259,15 @@ The directory structure relative to `input` is reproduced in `output_dir`.
 ## Changelog
 
 ### v3.1.0
+- **New GUI:**
+  - a progress bar, a **Cancel** button and an **Open output folder** button;
+  - a dropped `.DT1` file is processed on its own instead of its whole folder;
+  - the output defaults to `out_tex` next to the exe, and the paths and format are remembered between runs;
+  - **Browse…** opens at the current path;
+  - format choices are described in the list and in a tooltip;
+  - the window follows the Windows light or dark mode.
+- **Quieter log** (GUI and CLI): one line per file instead of three, colour-coded warnings and failures in the GUI, and a final summary with the elapsed time and the list of failed files.
+- **Lookup tables:** exporting `DXT1CTRL` / `R5G6R5TABLE` to an 8-bit format logs that the atlas is for viewing only (a warning for `jpg`).
 - **Faster batch processing:** files are decoded and converted in parallel on all CPU cores. On the full Xenus 2 cache (3829 files, 12 threads), Auto mode drops from ~199 s to ~60 s and `dds` mode from ~25 s to ~6 s; Boiling Point in `dds` mode from ~6.5 s to ~2 s. Output is byte-identical to v3.0.x, except for the fix below.
 - **No more lost textures when names clash:** `SKY00_BMP.DT1` and `SKY00_TGA.DT1` are different textures, but in `dds` or a forced format both used to be written to `SKY00.dds`, so one of them was silently overwritten (10 sky textures in Xenus 2). Textures whose output names would clash now keep their format suffix: `SKY00_BMP.dds`, `SKY00_TGA.dds`.
 - **Safer temporary files:** texconv now works in its own temporary folder, so a temporary `NAME.dds` can no longer overwrite or delete a real `NAME.dds` in the output folder.
